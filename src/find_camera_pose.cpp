@@ -28,6 +28,7 @@ struct InputPointDense {
 };
 
 Vector<cv::Point2f> queryPoints;
+Vector<cv::Point2f> selected2dPoints;
 Vector<cv::Point2f> match2dPoints;
 Vector<cv::Point3f> match3dPoints;
 int match_ID;
@@ -91,8 +92,9 @@ void calculate3DPoints(Vector<cv::Point2f>& mCoordinates, lsd_slam_viewer::keyfr
     int fyi=1/frame->fy;
     int cxi=-frame->cx/frame->fx;
     int cyi=-frame->cy/frame->fy;
-
+    int z=0;
     for(size_t i;i<mCoordinates.size();i++){
+        z++;
         int x=mCoordinates[i].x;
         int y=mCoordinates[i].y;
 
@@ -157,7 +159,8 @@ void calculate3DPoints(Vector<cv::Point2f>& mCoordinates, lsd_slam_viewer::keyfr
         point.x = (x * fxi + cxi) * depth;
         point.y = (y * fyi + cyi) * depth;
         point.z = depth;
-
+        selected2dPoints.push_back(mCoordinates[i]);
+        std::cout<<"pushing the point "<<z<<std::endl;
         match3dPoints.push_back(point);
 
         if (depth > maxDist) {
@@ -167,7 +170,7 @@ void calculate3DPoints(Vector<cv::Point2f>& mCoordinates, lsd_slam_viewer::keyfr
        // Eigen::Vector3f vec(posX, posY, posZ);
        // Eigen::Vector3f realPos = camToWorld * vec;
     }
-
+    std::cout<<"loop run for "<<z<<" times"<<std::endl;
 }
 
 void getMatchedFrame(int fid){
@@ -196,7 +199,7 @@ int main(int argc, char **argv)
   ros::NodeHandle n;
   ros::Time recordBegin = ros::Time::now();
   ros::Time recordEnd = ros::Time::now();
-  ros::Duration recordTime(20);    //record for 3 minutes
+  ros::Duration recordTime(60);    //record for 3 minutes
   ros::Rate r(10); // 10 hz
 
   imageList.open("src/find_camera_pose/images/trainImageList.txt", std::ios_base::app);
@@ -226,6 +229,7 @@ int main(int argc, char **argv)
 
     std::cout<<"size of 2d points: "<<match2dPoints.size()<<std::endl;
     std::cout<<"size of 3d points: "<<match3dPoints.size()<<std::endl;
+    std::cout<<"size of selected 2d points: "<<selected2dPoints.size()<<std::endl;
 
     std::cout<<"dif is: "<<(recordEnd-recordBegin);
   return 0;
