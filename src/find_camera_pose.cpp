@@ -29,6 +29,9 @@ struct InputPointDense {
 
 Vector<cv::Point2f> queryPoints;
 Vector<cv::Point2f> match2dPoints;
+Vector<cv::Point3f> match3dPoints;
+int match_ID;
+lsd_slam_viewer::keyframeMsgConstPtr matchedFrame;
 
 rosbag::Bag frameBag;
 cv_bridge::CvImagePtr cv_ptr;
@@ -38,7 +41,6 @@ cv_bridge::CvImagePtr cv_ptr;
 void imageCB(const sensor_msgs::Image::ConstPtr& msg)
 {
     std::ostringstream oss;
-  std::string filename="im";
   try
   {
     cv_ptr    = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::MONO8);
@@ -48,9 +50,9 @@ void imageCB(const sensor_msgs::Image::ConstPtr& msg)
     ROS_ERROR("cv_bridge exception: %s", e.what());
     return;
   }
-    oss << "src/find_camera_pose/images/im" << msg->header.frame_id.data()<<".png";
+    oss << "src/find_camera_pose/images/" << msg->header.frame_id.data()<<".png";
     cv::imwrite( oss.str(), cv_ptr->image );
-    imageList << "im"<<msg->header.frame_id.data()<<".png"<<std::endl;
+    imageList <<msg->header.frame_id.data()<<".png"<<std::endl;
 
     //savepcl
 //    i++;
@@ -66,10 +68,12 @@ void frameCB(const lsd_slam_viewer::keyframeMsgConstPtr& msg)
 }
 
 
-void calculate3DPoints(const std::vector<cv::Point2f>& qCoordinates, lsd_slam_viewer::keyframeMsgConstPtr& frame, int width, int height){
+void calculate3DPoints(Vector<cv::Point2f>& mCoordinates, lsd_slam_viewer::keyframeMsgConstPtr& frame){
     InputPointDense *points = (InputPointDense*)frame->pointcloud.data();
     Sophus::Sim3f camToWorld;
     memcpy(camToWorld.data(), frame->camToWorld.data(), 7*sizeof(float));
+    int width=frame->width;
+    int height=frame->height;
 
     float my_scale = camToWorld.scale(); // TODO lsd: maybe add maximum-likelyhood scaling factor...
     // float my_scaledTH = exp10(-2.5);
@@ -88,9 +92,9 @@ void calculate3DPoints(const std::vector<cv::Point2f>& qCoordinates, lsd_slam_vi
     int cxi=-frame->cx/frame->fx;
     int cyi=-frame->cy/frame->fy;
 
-    for(size_t i;i<qCoordinates.size();i++){
-        int x=qCoordinates[i].x;
-        int y=qCoordinates[i].y;
+    for(size_t i;i<mCoordinates.size();i++){
+        int x=mCoordinates[i].x;
+        int y=mCoordinates[i].y;
 
         if (points[x + y * width].idepth <= 0)
                 continue;
@@ -149,21 +153,41 @@ void calculate3DPoints(const std::vector<cv::Point2f>& qCoordinates, lsd_slam_vi
                 depth = 1 / (points[x + y * width].idepth + 0.1);
                 depth *= 0.8;
         }
+        cv::Point3f point;
+        point.x = (x * fxi + cxi) * depth;
+        point.y = (y * fyi + cyi) * depth;
+        point.z = depth;
 
-        float posX = (x * fxi + cxi) * depth;
-        float posY = (y * fyi + cyi) * depth;
-        float posZ = depth;
+        match3dPoints.push_back(point);
 
         if (depth > maxDist) {
                 maxDist = depth;
         }
 
-        Eigen::Vector3f vec(posX, posY, posZ);
-        Eigen::Vector3f realPos = camToWorld * vec;
+       // Eigen::Vector3f vec(posX, posY, posZ);
+       // Eigen::Vector3f realPos = camToWorld * vec;
     }
 
 }
 
+void getMatchedFrame(int fid){
+   frameBag.open("src/find_camera_pose/frames/frames.bag", rosbag::bagmode::Read);
+
+   rosbag::View view(frameBag, rosbag::TopicQuery("frames"));
+   lsd_slam_viewer::keyframeMsg::ConstPtr frame;
+   BOOST_FOREACH(rosbag::MessageInstance const m, view)
+   {
+       frame = m.instantiate<lsd_slam_viewer::keyframeMsg>();
+       if (frame != NULL)
+           std::cout<<"read frame with id: "<<frame->id<<std::endl;
+       if(frame->id==fid){
+           std::cout<<"I FOUND THE BEST MATCH!!!! : "<<frame->id<<std::endl;
+           matchedFrame=frame;
+       }
+
+   }
+   frameBag.close();
+}
 
 int main(int argc, char **argv)
 {
@@ -177,21 +201,6 @@ int main(int argc, char **argv)
 
   imageList.open("src/find_camera_pose/images/trainImageList.txt", std::ios_base::app);
   frameBag.open("src/find_camera_pose/frames/frames.bag", rosbag::bagmode::Write);
-   //   frameBag.open("src/find_camera_pose/frames/frames.bag", rosbag::bagmode::Read);
-
- // rosbag::View view(frameBag, rosbag::TopicQuery("frames"));
-
-//  BOOST_FOREACH(rosbag::MessageInstance const m, view)
-//  {
-//      lsd_slam_viewer::keyframeMsg::ConstPtr frame = m.instantiate<lsd_slam_viewer::keyframeMsg>();
-//      if (frame != NULL)
-//          std::cout<<"read frame with id: "<<frame->id<<std::endl;
-//      if(frame->id==213){
-//          std::cout<<"I FOUND THE BEST MATCH!!!!"<<std::endl;
-//      }
-
-//  }
-//  frameBag.close();
 
   ros::Subscriber subImages = n.subscribe("/lsd_slam/keyImages", 1000, imageCB);
   ros::Subscriber subFrames = n.subscribe("/lsd_slam/keyframes", 1000, frameCB);
@@ -204,12 +213,19 @@ int main(int argc, char **argv)
   }
   subImages.shutdown();
   subFrames.shutdown();
+  frameBag.close();
   //record is over
 
-    findMatch();
+    match_ID=findMatch();
     queryPoints=getQueryCoordinates();
     match2dPoints=getMatchCoordinates();
+   // calculate3DPoints(match2dPoints,match3dPoints);
  // ros::spin();
+    getMatchedFrame(match_ID);
+    calculate3DPoints(match2dPoints,matchedFrame);
+
+    std::cout<<"size of 2d points: "<<match2dPoints.size()<<std::endl;
+    std::cout<<"size of 3d points: "<<match3dPoints.size()<<std::endl;
 
     std::cout<<"dif is: "<<(recordEnd-recordBegin);
   return 0;

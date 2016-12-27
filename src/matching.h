@@ -25,6 +25,8 @@ const string defaultDirToSaveResImages = "src/find_camera_pose/results";
 Vector<cv::Point2f> qCoordinates;
 Vector<cv::Point2f> tCoordinates;
 
+int matchID;
+
 struct trainImgIdx_equal {
     int comp_to;
 
@@ -220,6 +222,10 @@ static void saveResultImages( const Mat& queryImage, const vector<KeyPoint>& que
         }
     }
     cout<<"best matching image is: "<<bestMatchIndex+1<<" with "<<maxMatchNum<<" matches"<<endl;
+    istringstream iss(trainImagesNames[bestMatchIndex]);
+    int a;
+    iss>>matchID;
+    cout<<"found index is: "<<a;
     vector<DMatch> correspondingMatches;
 
 
@@ -282,7 +288,7 @@ int findMatch(){
 
     saveResultImages( queryImage, queryKeypoints, trainImages, trainKeypoints,
                       matches, trainImagesNames, dirToSaveResImages );
-    return 0;
+    return matchID;
 
 }
 
