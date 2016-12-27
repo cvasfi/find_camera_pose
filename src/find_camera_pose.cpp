@@ -27,10 +27,10 @@ struct InputPointDense {
         unsigned char color[4];
 };
 
-Vector<cv::Point2f> queryPoints;
-Vector<cv::Point2f> selected2dPoints;
-Vector<cv::Point2f> match2dPoints;
-Vector<cv::Point3f> match3dPoints;
+std::vector<cv::Point2f> queryPoints;
+std::vector<cv::Point2f> selected2dPoints;
+std::vector<cv::Point2f> match2dPoints;
+std::vector<cv::Point3f> match3dPoints;
 int match_ID;
 lsd_slam_viewer::keyframeMsgConstPtr matchedFrame;
 
@@ -69,7 +69,7 @@ void frameCB(const lsd_slam_viewer::keyframeMsgConstPtr& msg)
 }
 
 
-void calculate3DPoints(Vector<cv::Point2f>& mCoordinates, lsd_slam_viewer::keyframeMsgConstPtr& frame){
+void calculate3DPoints(std::vector<cv::Point2f>& mCoordinates, lsd_slam_viewer::keyframeMsgConstPtr& frame){
     InputPointDense *points = (InputPointDense*)frame->pointcloud.data();
     Sophus::Sim3f camToWorld;
     memcpy(camToWorld.data(), frame->camToWorld.data(), 7*sizeof(float));
@@ -199,7 +199,7 @@ int main(int argc, char **argv)
   ros::NodeHandle n;
   ros::Time recordBegin = ros::Time::now();
   ros::Time recordEnd = ros::Time::now();
-  ros::Duration recordTime(60);    //record for 3 minutes
+  ros::Duration recordTime(90);    //record for 3 minutes
   ros::Rate r(10); // 10 hz
 
   imageList.open("src/find_camera_pose/images/trainImageList.txt", std::ios_base::app);
@@ -230,6 +230,24 @@ int main(int argc, char **argv)
     std::cout<<"size of 2d points: "<<match2dPoints.size()<<std::endl;
     std::cout<<"size of 3d points: "<<match3dPoints.size()<<std::endl;
     std::cout<<"size of selected 2d points: "<<selected2dPoints.size()<<std::endl;
+
+    // solvepnp
+
+      cv::Mat K = (cv::Mat_<float>(3, 3) << matchedFrame->fx, 0, matchedFrame->cx, 0, matchedFrame->fy, matchedFrame->cy, 0, 0, 1);
+      cv::Mat distortion = (cv::Mat_<float>(4, 1) << 0, 0, 0, 0);
+      cv::Mat rotation_vector; // Rotation in axis-angle form
+      cv::Mat translation_vector;
+
+//      Vector<cv::Point3d> op;
+//      Vector<cv::Point2d> ip;
+//      for(size_t k=0;k<match3dPoints.size();k++){
+//           op.push_back(cv::Point3d( (double)match3dPoints[k].x, (double)match3dPoints[k].y, (double)match3dPoints[k].z  ));
+//           ip.push_back(cv::Point2d( (double)selected2dPoints[k].x, (double)selected2dPoints[k].y));
+//      }
+
+      cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector);
+
+      cout<<"translation is: "<<translation_vector<<std::endl;
 
     std::cout<<"dif is: "<<(recordEnd-recordBegin);
   return 0;

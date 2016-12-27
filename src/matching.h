@@ -22,8 +22,8 @@ const string defaultQueryImageName = "src/find_camera_pose/query.png";
 const string defaultFileWithTrainImages = "src/find_camera_pose/images/trainImageList.txt";
 const string defaultDirToSaveResImages = "src/find_camera_pose/results";
 
-Vector<cv::Point2f> qCoordinates;
-Vector<cv::Point2f> tCoordinates;
+std::vector<cv::Point2f> qCoordinates;
+std::vector<cv::Point2f> tCoordinates;
 
 int matchID;
 
@@ -243,8 +243,8 @@ static void saveResultImages( const Mat& queryImage, const vector<KeyPoint>& que
     cout << ">" << endl;
 }
 
-Vector<cv::Point2f> getQueryCoordinates(){return qCoordinates;}
-Vector<cv::Point2f> getMatchCoordinates(){return tCoordinates;}
+std::vector<cv::Point2f> getQueryCoordinates(){return qCoordinates;}
+std::vector<cv::Point2f> getMatchCoordinates(){return tCoordinates;}
 
 
 int findMatch(){
