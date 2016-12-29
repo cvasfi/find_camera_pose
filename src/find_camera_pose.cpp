@@ -77,9 +77,7 @@ void calculate3DPoints(std::vector<cv::Point2f>& mCoordinates, lsd_slam_viewer::
     int height=frame->height;
 
     float my_scale = camToWorld.scale(); // TODO lsd: maybe add maximum-likelyhood scaling factor...
-    // float my_scaledTH = exp10(-2.5);
-    float my_scaledTH = exp10(-1.0);
-//    float my_scaledTH2 = exp10(-2.0);
+    float my_scaledTH = exp10(-2.5);
     float my_scaledTH2 = exp10(-2.0);
     int my_minNearSupport = 7;
     float my_absTH = exp10(-1.0);
