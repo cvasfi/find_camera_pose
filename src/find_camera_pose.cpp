@@ -78,7 +78,8 @@ void calculate3DPoints(std::vector<cv::Point2f>& mCoordinates, lsd_slam_viewer::
 
     float my_scale = camToWorld.scale(); // TODO lsd: maybe add maximum-likelyhood scaling factor...
     // float my_scaledTH = exp10(-2.5);
-    float my_scaledTH = exp10(-3.0);
+    float my_scaledTH = exp10(-1.0);
+//    float my_scaledTH2 = exp10(-2.0);
     float my_scaledTH2 = exp10(-2.0);
     int my_minNearSupport = 7;
     float my_absTH = exp10(-1.0);
@@ -88,10 +89,15 @@ void calculate3DPoints(std::vector<cv::Point2f>& mCoordinates, lsd_slam_viewer::
     double maxDist = 0;
     int otherMinNearSupport = 9;
 
-    int fxi=1/frame->fx;
-    int fyi=1/frame->fy;
-    int cxi=-frame->cx/frame->fx;
-    int cyi=-frame->cy/frame->fy;
+    float fxi=1/frame->fx;
+    float fyi=1/frame->fy;
+    float cxi=-frame->cx/frame->fx;
+    float cyi=-frame->cy/frame->fy;
+//    int fxi =1/399.86176;
+//    int fyi =1/404.12659;
+//    int
+
+
     int z=0;
     for(size_t i;i<mCoordinates.size();i++){
         z++;
@@ -160,8 +166,10 @@ void calculate3DPoints(std::vector<cv::Point2f>& mCoordinates, lsd_slam_viewer::
         point.y = (y * fyi + cyi) * depth;
         point.z = depth;
         selected2dPoints.push_back(mCoordinates[i]);
-        std::cout<<"pushing the point "<<z<<std::endl;
+//      std::cout<<"pushing the point "<<z<<std::endl;
+
         match3dPoints.push_back(point);
+
 
         if (depth > maxDist) {
                 maxDist = depth;
@@ -199,7 +207,7 @@ int main(int argc, char **argv)
   ros::NodeHandle n;
   ros::Time recordBegin = ros::Time::now();
   ros::Time recordEnd = ros::Time::now();
-  ros::Duration recordTime(90);    //record for 3 minutes
+  ros::Duration recordTime(40);    //record for 3 minutes
   ros::Rate r(10); // 10 hz
 
   imageList.open("src/find_camera_pose/images/trainImageList.txt", std::ios_base::app);
@@ -222,6 +230,8 @@ int main(int argc, char **argv)
     match_ID=findMatch();
     queryPoints=getQueryCoordinates();
     match2dPoints=getMatchCoordinates();
+    std::cout<<"MatchID is : "<<match_ID<<std::endl;
+
    // calculate3DPoints(match2dPoints,match3dPoints);
  // ros::spin();
     getMatchedFrame(match_ID);
@@ -247,7 +257,10 @@ int main(int argc, char **argv)
 
       cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector);
 
+
       cout<<"translation is: "<<translation_vector<<std::endl;
+      cout<<"Rotation is: "<<rotation_vector<<std::endl;
+
 
     std::cout<<"dif is: "<<(recordEnd-recordBegin);
   return 0;
