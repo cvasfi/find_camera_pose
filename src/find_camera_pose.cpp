@@ -12,14 +12,23 @@
 #include "sophus/sim3.hpp"
 #include "sophus/se3.hpp"
 #include <boost/filesystem.hpp>
-    #include <rosbag/bag.h>
+#include <rosbag/bag.h>
 #include <boost/foreach.hpp>
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
-    #include <rosbag/view.h>
+#include <rosbag/view.h>
 #include <ctime>
 
+#include "ControlNode.h"
+#include "DroneController.h"
+#include "TooN/se3.h"
+#include "HelperFunctions.h"
+
+
+
+
 #include "matching.h"
+
 
 struct InputPointDense {
         float idepth;
@@ -77,7 +86,7 @@ void calculate3DPoints(std::vector<cv::Point2f>& mCoordinates, lsd_slam_viewer::
     int height=frame->height;
 
     float my_scale = camToWorld.scale(); // TODO lsd: maybe add maximum-likelyhood scaling factor...
-    float my_scaledTH = exp10(-2.5);
+    float my_scaledTH = exp10(-3.0);
     float my_scaledTH2 = exp10(-2.0);
     int my_minNearSupport = 7;
     float my_absTH = exp10(-1.0);
@@ -91,9 +100,7 @@ void calculate3DPoints(std::vector<cv::Point2f>& mCoordinates, lsd_slam_viewer::
     float fyi=1/frame->fy;
     float cxi=-frame->cx/frame->fx;
     float cyi=-frame->cy/frame->fy;
-//    int fxi =1/399.86176;
-//    int fyi =1/404.12659;
-//    int
+
 
 
     int z=0;
@@ -159,23 +166,35 @@ void calculate3DPoints(std::vector<cv::Point2f>& mCoordinates, lsd_slam_viewer::
                 depth = 1 / (points[x + y * width].idepth + 0.1);
                 depth *= 0.8;
         }
-        cv::Point3f point;
-        point.x = (x * fxi + cxi) * depth;
-        point.y = (y * fyi + cyi) * depth;
-        point.z = depth;
-        selected2dPoints.push_back(mCoordinates[i]);
+
+//        //Calculate Position in camera coordinate
+//        cv::Point3f point;
+//        point.x = (x * fxi + cxi) * depth;
+//        point.y = (y * fyi + cyi) * depth;
+//        point.z = depth;
+//        selected2dPoints.push_back(mCoordinates[i]);
+//        match3dPoints.push_back(point);
 //      std::cout<<"pushing the point "<<z<<std::endl;
 
-        match3dPoints.push_back(point);
+        //Calculate Real Position in LSDSLAM coordinate
+        cv::Point3f real_point;
+        Eigen::Vector3f vec((x * fxi + cxi) * depth, (y * fyi + cyi) * depth, depth);
+        Eigen::Vector3f realPos = camToWorld * vec; //OK??
+        real_point.x=realPos[0];
+        real_point.y=realPos[1];
+        real_point.z=realPos[2];
+        selected2dPoints.push_back(mCoordinates[i]);
+        match3dPoints.push_back(real_point);
 
 
         if (depth > maxDist) {
                 maxDist = depth;
         }
 
-       // Eigen::Vector3f vec(posX, posY, posZ);
-       // Eigen::Vector3f realPos = camToWorld * vec;
+
     }
+    Eigen::Vector3f Camorigin(0,0,0);
+    std::cout<<"camToWorld "<<camToWorld*Camorigin<<std::endl;
     std::cout<<"loop run for "<<z<<" times"<<std::endl;
 }
 
@@ -198,6 +217,8 @@ void getMatchedFrame(int fid){
    frameBag.close();
 }
 
+
+
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "find_camera_pose");
@@ -205,7 +226,7 @@ int main(int argc, char **argv)
   ros::NodeHandle n;
   ros::Time recordBegin = ros::Time::now();
   ros::Time recordEnd = ros::Time::now();
-  ros::Duration recordTime(40);    //record for 3 minutes
+  ros::Duration recordTime(45);    //record for 3 minutes
   ros::Rate r(10); // 10 hz
 
   imageList.open("src/find_camera_pose/images/trainImageList.txt", std::ios_base::app);
@@ -230,8 +251,7 @@ int main(int argc, char **argv)
     match2dPoints=getMatchCoordinates();
     std::cout<<"MatchID is : "<<match_ID<<std::endl;
 
-   // calculate3DPoints(match2dPoints,match3dPoints);
- // ros::spin();
+
     getMatchedFrame(match_ID);
     calculate3DPoints(match2dPoints,matchedFrame);
 
@@ -239,27 +259,96 @@ int main(int argc, char **argv)
     std::cout<<"size of 3d points: "<<match3dPoints.size()<<std::endl;
     std::cout<<"size of selected 2d points: "<<selected2dPoints.size()<<std::endl;
 
-    // solvepnp
 
-      cv::Mat K = (cv::Mat_<float>(3, 3) << matchedFrame->fx, 0, matchedFrame->cx, 0, matchedFrame->fy, matchedFrame->cy, 0, 0, 1);
-      cv::Mat distortion = (cv::Mat_<float>(4, 1) << 0, 0, 0, 0);
-      cv::Mat rotation_vector; // Rotation in axis-angle form
-      cv::Mat translation_vector;
-
-//      Vector<cv::Point3d> op;
-//      Vector<cv::Point2d> ip;
-//      for(size_t k=0;k<match3dPoints.size();k++){
-//           op.push_back(cv::Point3d( (double)match3dPoints[k].x, (double)match3dPoints[k].y, (double)match3dPoints[k].z  ));
-//           ip.push_back(cv::Point2d( (double)selected2dPoints[k].x, (double)selected2dPoints[k].y));
-//      }
-
-      cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector);
+    cv::Mat K = (cv::Mat_<float>(3, 3) << matchedFrame->fx, 0, matchedFrame->cx, 0, matchedFrame->fy, matchedFrame->cy, 0, 0, 1);
+    cv::Mat distortion = (cv::Mat_<float>(4, 1) << 0, 0, 0, 0);
+    cv::Mat rotation_vector; // Rotation in axis-angle form
+    cv::Mat translation_vector;
 
 
-      cout<<"translation is: "<<translation_vector<<std::endl;
-      cout<<"Rotation is: "<<rotation_vector<<std::endl;
+    cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector);
 
 
-    std::cout<<"dif is: "<<(recordEnd-recordBegin);
+    cout<<"translation is: "<<translation_vector<<std::endl;
+    cout<<"Rotation is: "<<rotation_vector<<std::endl;
+
+    //90deg Rotation (PTAMWrapper.cpp, Handleframe)
+    TooN::SE3<> LSDSLAM_ResultSE3;
+    LSDSLAM_ResultSE3.get_translation()=TooN::makeVector(translation_vector.at<double>(0,0),translation_vector.at<double>(1,0),translation_vector.at<double>(2,0));
+    cv::Mat rmat;
+    cv::Rodrigues(rotation_vector, rmat);
+    TooN::Matrix<3,3> mat;
+    mat(0,0)=rmat.at<double>(0,0); mat(0,1)=rmat.at<double>(0,1); mat(0,2)=rmat.at<double>(0,2);
+    mat(1,0)=rmat.at<double>(1,0); mat(1,1)=rmat.at<double>(1,1); mat(1,2)=rmat.at<double>(1,2);
+    mat(2,0)=rmat.at<double>(2,0); mat(2,1)=rmat.at<double>(2,1); mat(2,2)=rmat.at<double>(2,2); //index is correct??
+
+    cout <<"translation_vector is"<< endl<< translation_vector <<endl << "get_traslation is "<<endl<<LSDSLAM_ResultSE3.get_translation() <<  endl; //For check
+    cout <<"rmat is"<< endl<< rmat <<endl << "mat is"<<endl<<mat <<  endl; //For check
+    LSDSLAM_ResultSE3.get_rotation()=mat;
+    TooN::SE3<> LSDSLAM_ResultSE3_camToWorld;
+    LSDSLAM_ResultSE3_camToWorld = LSDSLAM_ResultSE3.inverse();
+    double testRoll = 0;
+    double testPitch = 0;
+    double testYaw = 0;
+    rod2rpy(LSDSLAM_ResultSE3_camToWorld.get_rotation(), &testRoll, &testPitch, &testYaw);
+    testPitch += 90.0;
+    LSDSLAM_ResultSE3_camToWorld.get_rotation() = rpy2rod(testRoll, testPitch, testYaw);
+    rod2rpy(LSDSLAM_ResultSE3_camToWorld.get_rotation(), &testRoll, &testPitch, &testYaw);
+    TooN::Vector<3> origin = TooN::makeVector(0,0,0);
+    TooN::Vector<3> result = LSDSLAM_ResultSE3_camToWorld*origin;
+    cout <<"Camera position is "<<result <<  endl; //For check
+
+
+    //Publish (DroneController.cpp, DroneController::setTarget(target))
+    ros::Publisher tum_ardrone_pub;
+    std::string command_channel;
+    command_channel = n.resolveName("tum_ardrone/com");
+    tum_ardrone_pub	   = n.advertise<std_msgs::String>(command_channel,50);
+    char buf[200];
+    snprintf(buf,200,"New Target: xyz = %.3f, %.3f, %.3f,  yaw=%.3f", result[0],result[1],result[2],testYaw);
+    std::string c=std::string("u l ") + buf;
+    while (ros::ok())
+    {
+        std_msgs::String s;
+        s.data = c.c_str();
+        pthread_mutex_t tum_ardrone_CS = PTHREAD_MUTEX_INITIALIZER;
+        pthread_mutex_lock(&tum_ardrone_CS);
+        tum_ardrone_pub.publish(s);
+        pthread_mutex_unlock(&tum_ardrone_CS);
+    }
+
   return 0;
 }
+
+
+//void print_info(const cv::Mat& mat)
+//{
+//    using namespace std;
+
+
+//    cout << "type: " << (
+//        mat.type() == CV_8UC3 ? "CV_8UC3" :
+//        mat.type() == CV_16SC1 ? "CV_16SC1" :
+//        mat.type() == CV_64FC2 ? "CV_64FC2" :
+//        "other"
+//        ) << endl;
+
+//    cout << "depth: " << (
+//        mat.depth() == CV_8U ? "CV_8U" :
+//        mat.depth() == CV_16S ? "CV_16S" :
+//        mat.depth() == CV_64F ? "CV_64F" :
+//        "other"
+//        ) << endl;
+
+//    cout << "rows: " << mat.rows << endl;
+
+//    cout << "cols: " << mat.cols << endl;
+
+
+//    cout << "channels: " << mat.channels() << endl;
+
+//    cout << "continuous: " <<
+//        (mat.isContinuous() ? "true" : "false")<< endl;
+//}
+
+

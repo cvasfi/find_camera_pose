@@ -114,6 +114,9 @@ catkin_package(
 ###########
 include_directories(
   ${PROJECT_SOURCE_DIR}/thirdparty/Sophus
+  ${CMAKE_BINARY_DIR}/thirdparty/src/thirdparty/TooN/include
+  ${CMAKE_BINARY_DIR}/thirdparty/src/thirdparty/libcvd/include 
+  ${CMAKE_BINARY_DIR}/thirdparty/src/thirdparty/gvars3/include 
 )
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
@@ -198,3 +201,8 @@ ${OpenCV_INCLUDE_DIRS}
 add_executable(find_camera_pose src/find_camera_pose.cpp)
 target_link_libraries(find_camera_pose ${catkin_LIBRARIES} ${rosbag_LIBRARIES} ${OpenCV_LIBRARIES} opencv_nonfree)
 add_dependencies(find_camera_pose find_camera_pose_generate_messages_cpp)
+
+link_directories(
+  ${CMAKE_BINARY_DIR}/thirdparty/src/thirdparty/libcvd/lib 
+  ${CMAKE_BINARY_DIR}/thirdparty/src/thirdparty/gvars3/lib 
+)
