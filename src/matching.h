@@ -187,6 +187,14 @@ static void matchDescriptors( const Mat& queryDescriptors, const vector<Mat>& tr
     cout << ">" << endl;
 }
 
+static void undistortImage(){
+    cv::Mat rawQuery = imread( "src/find_camera_pose/rawQuery.png", CV_LOAD_IMAGE_GRAYSCALE);
+    cv::Mat K=(cv::Mat_<float>(3, 3) <<396.17782, 0, 322.453185, 0, 399.798333, 174.243174, 0, 0, 1);
+    cv::Mat distCoeffs;
+     cv::Mat imageUndistorted;
+     cv::undistort(rawQuery, imageUndistorted, K, distCoeffs);
+     cv::imwrite("src/find_camera_pose/query.png" , imageUndistorted );
+}
 
 static void saveResultImages( const Mat& queryImage, const vector<KeyPoint>& queryKeypoints,
                        const vector<Mat>& trainImages, const vector<vector<KeyPoint> >& trainKeypoints,

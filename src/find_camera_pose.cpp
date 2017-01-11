@@ -276,7 +276,7 @@ int main(int argc, char **argv)
   imageList.open("src/find_camera_pose/images/trainImageList.txt", std::ios_base::app);
   frameBag.open("src/find_camera_pose/frames/frames.bag", rosbag::bagmode::Write);
   KalmanFilterBag.open("src/find_camera_pose/KalmanFilter/KalmanFilter.bag", rosbag::bagmode::Write);
-
+    undistortImage();
 
   ros::Subscriber subImages = n.subscribe("/lsd_slam/keyImages", 1000, imageCB);
   ros::Subscriber subFrames = n.subscribe("/lsd_slam/keyframes", 1000, frameCB);
