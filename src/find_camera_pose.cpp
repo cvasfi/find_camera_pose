@@ -74,7 +74,7 @@ void KalmanFilterCB(const tum_ardrone::filter_stateConstPtr& msg){
     KalmanFilterBag.write("Pose_KalmanFilter", ros::Time::now(), *msg);
 }
 
-void calculate3DPoints(std::vector<cv::Point2f>& mCoordinates, lsd_slam_viewer::keyframeMsgConstPtr& frame){
+void calculate3DPoints(std::vector<cv::Point2f>& mCoordinates,std::vector<cv::Point2f>& qCoordinates, lsd_slam_viewer::keyframeMsgConstPtr& frame){
     InputPointDense *points = (InputPointDense*)frame->pointcloud.data();
     Sophus::Sim3f camToWorld;
     memcpy(camToWorld.data(), frame->camToWorld.data(), 7*sizeof(float));
@@ -168,7 +168,7 @@ void calculate3DPoints(std::vector<cv::Point2f>& mCoordinates, lsd_slam_viewer::
         point.x = my_scale*scale*(x * fxi + cxi) * depth;
         point.y = my_scale*scale*(y * fyi + cyi) * depth;
         point.z = my_scale*scale*depth;
-        selected2dPoints.push_back(mCoordinates[i]);
+        selected2dPoints.push_back(qCoordinates[i]);
         match3dPoints.push_back(point);
 
         if (depth > maxDist) {
@@ -219,7 +219,7 @@ void getPositionFromKalmanFilter(){
 
 //           frame->header.stamp.toSec()==matchedFrame->time
 //           frame->header.stamp-ros::Time(matchedFrame->time)
-       if(abs(framekf->header.stamp.toSec()-copy->time)<0.02){
+       if(abs(framekf->header.stamp.toSec()-copy->time)<0.06){
            match =true;
            matchtime_LSD=framekf->header.stamp.toSec();
            matchtime_kf=copy->time;
@@ -247,7 +247,7 @@ int main(int argc, char **argv)
     ros::NodeHandle n;
     ros::Time recordBegin = ros::Time::now();
     ros::Time recordEnd = ros::Time::now();
-    ros::Duration recordTime(35);    //record for 3 minutes
+    ros::Duration recordTime(30);    //record for 3 minutes
     ros::Rate r(10); // 10 hz
 
     imageList.open("src/find_camera_pose/images/trainImageList.txt", ios_base::app);
@@ -276,12 +276,13 @@ int main(int argc, char **argv)
     match_ID=findMatch();
     queryPoints=getQueryCoordinates();
     match2dPoints=getMatchCoordinates();
+
     cout<<"MatchID is : "<<match_ID<<endl;
 
 
     getMatchedFrame(match_ID);
     getPositionFromKalmanFilter();
-    calculate3DPoints(match2dPoints,matchedFrame);
+    calculate3DPoints(match2dPoints,queryPoints,matchedFrame);
 
 
 
@@ -301,10 +302,8 @@ int main(int argc, char **argv)
     cv::Mat rotation_vector; // Rotation in axis-angle form
     cv::Mat translation_vector;
 
-    cout <<"match3Dpoint"<< match3dPoints << endl;
 
     cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector);
-//    cv::solvePnP(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector);
 
     cout<<"translation is: "<<translation_vector<<endl;
     cout<<"Rotation is: "<<rotation_vector<<endl;
@@ -315,32 +314,79 @@ int main(int argc, char **argv)
     LSDSLAM_ResultSE3.get_translation()=TooN::makeVector(translation_vector.at<double>(0,0),translation_vector.at<double>(1,0),translation_vector.at<double>(2,0));
     cv::Mat rmat;
     cv::Rodrigues(rotation_vector, rmat);
+
     TooN::Matrix<3,3> mat;
     mat(0,0)=rmat.at<double>(0,0); mat(0,1)=rmat.at<double>(0,1); mat(0,2)=rmat.at<double>(0,2);
     mat(1,0)=rmat.at<double>(1,0); mat(1,1)=rmat.at<double>(1,1); mat(1,2)=rmat.at<double>(1,2);
     mat(2,0)=rmat.at<double>(2,0); mat(2,1)=rmat.at<double>(2,1); mat(2,2)=rmat.at<double>(2,2);
     LSDSLAM_ResultSE3.get_rotation()=mat;
-    cout <<"translation_vector is"<< endl<< translation_vector <<endl << "get_traslation is "<<endl<<LSDSLAM_ResultSE3.get_translation() <<  endl; //For check
-    cout <<"rmat is"<< endl<< rmat <<endl << "mat is"<<endl<<mat <<  endl; //For check
+    cout << "Rotation matrix is"<< mat <<  endl; //For check
 
     TooN::SE3<> LSDSLAM_ResultSE3_camToKeyFrame;
+//    cout << "LSDSLAM_ResultSE3"<< LSDSLAM_ResultSE3 <<  endl; //For check
     LSDSLAM_ResultSE3_camToKeyFrame = LSDSLAM_ResultSE3.inverse();
-    double testRoll = 0;
-    double testPitch = 0;
-    double testYaw = 0;
-    rod2rpy(LSDSLAM_ResultSE3_camToKeyFrame.get_rotation(), &testRoll, &testPitch, &testYaw);
-    testPitch += 90.0; //testRoll += 90.0; //    testPitch += 90.0;
-    LSDSLAM_ResultSE3_camToKeyFrame.get_rotation() = rpy2rod(testRoll, testPitch, testYaw);
-    rod2rpy(LSDSLAM_ResultSE3_camToKeyFrame.get_rotation(), &testRoll, &testPitch, &testYaw);
+    cout<<"translation camToKeyFrame in LSD coordinate is: "<<LSDSLAM_ResultSE3_camToKeyFrame.get_translation()<<endl;
+
+
+
+    TooN::SE3<> LSDSLAM_ResultSE3_camToKeyFrame_World;
+    TooN::Matrix<3,3> rot_camTokeyFrame=LSDSLAM_ResultSE3_camToKeyFrame.get_rotation().get_matrix();
+    cv::Mat rmat_camToKeyframe=(cv::Mat_<double>(3,3)<<0,0,0,0,0,0,0,0,0);
+    cv::Mat rvec_camToKeyframe;
+
+    rmat_camToKeyframe.at<double>(0,0)=rot_camTokeyFrame(0,0); rmat_camToKeyframe.at<double>(0,1)=rot_camTokeyFrame(0,1); rmat_camToKeyframe.at<double>(0,2)=rot_camTokeyFrame(0,2);
+    rmat_camToKeyframe.at<double>(1,0)=rot_camTokeyFrame(1,0); rmat_camToKeyframe.at<double>(1,1)=rot_camTokeyFrame(1,1); rmat_camToKeyframe.at<double>(1,2)=rot_camTokeyFrame(1,2);
+    rmat_camToKeyframe.at<double>(2,0)=rot_camTokeyFrame(2,0); rmat_camToKeyframe.at<double>(2,1)=rot_camTokeyFrame(2,1); rmat_camToKeyframe.at<double>(2,2)=rot_camTokeyFrame(2,2);
+    cv::Rodrigues(rmat_camToKeyframe, rvec_camToKeyframe);
+    cv::Mat rotation_vector_World = (cv::Mat_<double>(3,1)<<rvec_camToKeyframe.at<double>(0,0),rvec_camToKeyframe.at<double>(2,0),-rvec_camToKeyframe.at<double>(1,0));
+    cv::Mat rmat_World;
+
+    cv::Rodrigues(rotation_vector_World, rmat_World);
+    TooN::Matrix<3,3> mat_world;
+
+    mat_world(0,0)=rmat_World.at<double>(0,0); mat_world(0,1)=rmat_World.at<double>(0,1); mat_world(0,2)=rmat_World.at<double>(0,2);
+    mat_world(1,0)=rmat_World.at<double>(1,0); mat_world(1,1)=rmat_World.at<double>(1,1); mat_world(1,2)=rmat_World.at<double>(1,2);
+    mat_world(2,0)=rmat_World.at<double>(2,0); mat_world(2,1)=rmat_World.at<double>(2,1); mat_world(2,2)=rmat_World.at<double>(2,2);
+    LSDSLAM_ResultSE3_camToKeyFrame_World.get_rotation()=mat_world;
+    LSDSLAM_ResultSE3_camToKeyFrame_World.get_translation()=TooN::makeVector((LSDSLAM_ResultSE3_camToKeyFrame.get_translation())[0],(LSDSLAM_ResultSE3_camToKeyFrame.get_translation()[2]),-(LSDSLAM_ResultSE3_camToKeyFrame.get_translation())[1]);
+    cout<<"translation camToKeyFrame in World coordinate is: "<<LSDSLAM_ResultSE3_camToKeyFrame_World.get_translation()<<endl;
+
+
+
+//    TooN::Vector<3> CameraOrigin = TooN::makeVector(0,0,0);
+//    TooN::Vector<3> CameraOrigin_fromKF_LSDCoordinate = LSDSLAM_ResultSE3_camToKeyFrame*CameraOrigin;
+//    TooN::Vector<3> CameraOrigin_fromKF_WorldCoordinate = TooN::makeVector(CameraOrigin_fromKF_LSDCoordinate[0],CameraOrigin_fromKF_LSDCoordinate[2],-CameraOrigin_fromKF_LSDCoordinate[1]);
+
+
+
+//    cout << "LSDSLAM_ResultSE3_camToKeyFrame"<< LSDSLAM_ResultSE3_camToKeyFrame <<  endl; //For check
+//    cout <<"Before Rotation Camera position is"<< endl<< LSDSLAM_ResultSE3_camToKeyFrame*TooN::makeVector(0,0,0) <<endl; //For check
+//    double testRoll = 0;
+//    double testPitch = 0;
+//    double testYaw = 0;
+//    rod2rpy(LSDSLAM_ResultSE3_camToKeyFrame.get_rotation(), &testRoll, &testPitch, &testYaw);
+//    testPitch += 90.0; //testRoll += 90.0; //    testPitch += 90.0;
+//    LSDSLAM_ResultSE3_camToKeyFrame.get_rotation() = rpy2rod(testRoll, testPitch, testYaw);
+//    cout << "LSDSLAM_ResultSE3_camToKeyFrame after rotation"<< LSDSLAM_ResultSE3_camToKeyFrame <<  endl; //For check
+//    cout <<"After Rotation translation_vector is"<< endl<< LSDSLAM_ResultSE3_camToKeyFrame*TooN::makeVector(0,0,0) <<endl; //For check
+
 
 
 
     //Calculate camera position in world coordinate
     TooN::Vector<3> origin = TooN::makeVector(0,0,0);
-    TooN::Vector<3> result = KeyFrameToWorldSE3*LSDSLAM_ResultSE3_camToKeyFrame*origin;
+    TooN::Vector<3> result = KeyFrameToWorldSE3*LSDSLAM_ResultSE3_camToKeyFrame_World*origin;
+    double testRoll = 0;
+    double testPitch = 0;
+    double testYaw = 0;
+    rod2rpy((KeyFrameToWorldSE3*LSDSLAM_ResultSE3_camToKeyFrame_World).get_rotation(), &testRoll, &testPitch, &testYaw);
+//    rod2rpy((KeyFrameToWorldSE3).get_rotation(), &testRoll, &testPitch, &testYaw);
+
+    cout<<"testYaw "<<testYaw<<endl;
     cout<<"Kalman Filter Position: "<<x_kf<<","<<y_kf<<","<<z_kf<<endl;
     cout <<"Camera position in World Coordinate is "<<result <<  endl; //For check
-    cout <<"Yaw angle is "<<testYaw <<  endl<<endl;
+    cout <<"Yaw_kf is "<<yaw_kf <<  endl;
+    cout <<"TestYaw is "<<testYaw <<  endl<<endl;
     cout << "Command is"<< endl;
 
     char buf[200];
@@ -348,23 +394,6 @@ int main(int argc, char **argv)
     cout <<buf<<endl;
 
 
-//    //Publish (DroneController.cpp, DroneController::setTarget(target))
-//    ros::Publisher tum_ardrone_pub;
-//    string command_channel;
-//    command_channel = n.resolveName("tum_ardrone/com");
-//    tum_ardrone_pub	   = n.advertise<std_msgs::String>(command_channel,50);
-//    char buf[200];
-//    snprintf(buf,200,"New Target: xyz = %.3f, %.3f, %.3f,  yaw=%.3f", result[0],result[1],result[2],testYaw);
-//    string c=string("u l ") + buf;
-////    while (ros::ok())
-////    {
-//    std_msgs::String s;
-//    s.data = c.c_str();
-//    pthread_mutex_t tum_ardrone_CS = PTHREAD_MUTEX_INITIALIZER;
-//    pthread_mutex_lock(&tum_ardrone_CS);
-//    tum_ardrone_pub.publish(s);
-//    pthread_mutex_unlock(&tum_ardrone_CS);
-////    }
 
   return 0;
 }
