@@ -1,13 +1,15 @@
 # find_camera_pose
 
-1. Save the image you want to search as "query.png" in the project folder.
-2. Make sure to create "frames", "images" and "results" folders if they do not exist.
+1. Save the image you want to search as "rawQuery.png" in the project folder.
+2. Make sure to create "frames", "images", "results" and "KalmanFilter" folders if they do not exist.
 3. Run ```roscore```
-4. Run ```rosrun lsd_slam_core live_slam /image:=/ardrone/image_raw _calib:=/home/tapir/catkin_ws/src/bebop_lsd_slam/lsd_slam_core/calib/bebop_calibration.cfg```
-5. Run ```rosbag play testfile.bag ```
-6. Run ``` rosrun find_camera_pose find_camera_pose```
-
-
-
-Note:
-testfile.bag is the bagfile recorded in the lab, feel free to adjust steps 4 and 5 according to your data.
+4. Run ```rosrun joy joy_node```
+5. Connect your laptop to quadcopter WiFi
+6. Run ```roslaunch bebop_converter start.launch```
+7. Run ```roslaunch bebop_converter tum_ardrone.launch```
+8. Run ```rosrun lsd_slam_viewer viewer```
+9. Fly quadcopter up and down to initialize kalman filter.
+10. Run ```rosrun find_camera_pose find_camera_pose```
+11. Explore the environment for a period of time you set.
+12. ```find_camera_pose``` calculates target position as ```gotoraw x, y, z, yaw```
+13. On gui, check ```Autopilot``` and copy and past ```gotoraw x, y, z, yaw```, then click ```Clear and Send```
