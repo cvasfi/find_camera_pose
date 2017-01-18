@@ -387,7 +387,10 @@ int main(int argc, char **argv)
     snprintf(buf,200,"gotoraw %.3f %.3f %.3f %.3f", result[0],result[1],result[2],testYaw);
     cout <<buf<<endl;
 
-
+    cout << "Press Enter to delete the images";
+    cin.ignore();
+    system("exec rm -r src/find_camera_pose/images/*");
+    system("exec rm -r src/find_camera_pose/results/*");
 
   return 0;
 }
