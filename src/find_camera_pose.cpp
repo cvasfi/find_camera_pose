@@ -231,10 +231,11 @@ void getPositionFromKalmanFilter(){
                roll_kf=framekf->roll; pitch_kf=framekf->pitch; yaw_kf=framekf->yaw;
                scale = framekf->scale;
            }
-           time_stamp_error+=0.05;
        }
-
+       time_stamp_error+=0.05;
    }
+   cout << "time_stamp_error is " << time_stamp_error-0.05 << endl;
+
 //   std::cout<<"BEST MATCH Time Stamp in Kalman Filter : "<<std::setprecision(20)<<frame->header.stamp.toSec()<<std::endl <<std::setprecision(20)<< copy->time<<endl;
    if(match){
    std::cout<<"match!"<<std::endl;
@@ -357,8 +358,7 @@ int main(int argc, char **argv)
     cv::Mat translation_vector;
 
 //cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector);
-    cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector, false, 100, 3.0, 100);
-    //cv::solvePnPRansac(objectPoints, imagePoints, K, distortion, rvec_est, tvec_est, false, 100, 3.0, 100);
+    cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector, false, 100, 8.0, 100);
 
 
     cout<<"SolvePnP translation is: "<<translation_vector<<endl;
@@ -419,14 +419,14 @@ int main(int argc, char **argv)
     rod2rpy((KeyFrameToWorldSE3*LSDSLAM__camToKeyFrame_KF).get_rotation(), &testRoll, &testPitch, &testYaw);
 //    rod2rpy((KeyFrameToWorldSE3).get_rotation(), &testRoll, &testPitch, &testYaw); //for check
 
-//    cout <<"Before Rotation Camera position is"<< endl<< LSDSLAM__camToKeyFrame*TooN::makeVector(1,1,1) <<endl; //For check
-//    double Roll = 0;
-//    double Pitch = 0;
-//    double Yaw = 0;
-//    rod2rpy(LSDSLAM__camToKeyFrame.get_rotation(), &Roll, &Pitch, &Yaw);
-//    Pitch += 90.0;
-//    LSDSLAM__camToKeyFrame.get_rotation() = rpy2rod(Roll, Pitch, Yaw);
-//    cout <<"After Rotation Camera position is"<< endl<< LSDSLAM__camToKeyFrame*TooN::makeVector(1,1,1) <<endl; //For check
+    cout <<"Before Rotation Camera position is"<< endl<< LSDSLAM__camToKeyFrame*TooN::makeVector(0,0,0) <<endl; //For check
+    double Roll = 0;
+    double Pitch = 0;
+    double Yaw = 0;
+    rod2rpy(LSDSLAM__camToKeyFrame.get_rotation(), &Roll, &Pitch, &Yaw);
+    Pitch += 90.0;
+    LSDSLAM__camToKeyFrame.get_rotation() = rpy2rod(Roll, Pitch, Yaw);
+    cout <<"After Rotation Camera position is"<< endl<< LSDSLAM__camToKeyFrame*TooN::makeVector(0,0,0) <<endl; //For check
 
     cout<<"Kalman Filter Position (x,y,z,yaw): "<<endl<<x_kf<<","<<y_kf<<","<<z_kf<<","<<yaw_kf<<endl;
     cout <<"Camera position in World Coordinate (x,y,z,yaw): "<<endl<<result << "," << testYaw<< endl; //For check
