@@ -203,31 +203,37 @@ void getMatchedFrame(int fid){
 
 void getPositionFromKalmanFilter(){
    KalmanFilterBag.open("src/find_camera_pose/KalmanFilter/KalmanFilter.bag", rosbag::bagmode::Read);
-   bool match;
+   bool match=false;
    double matchtime_kf;
    double matchtime_LSD;
    lsd_slam_viewer::keyframeMsgConstPtr copy;
    copy = matchedFrame;
    rosbag::View view(KalmanFilterBag, rosbag::TopicQuery("Pose_KalmanFilter"));
    tum_ardrone::filter_state::ConstPtr framekf;
-   BOOST_FOREACH(rosbag::MessageInstance const m, view)
-   {
-       framekf = m.instantiate<tum_ardrone::filter_state>();
-       if (framekf != NULL)
-//           std::cout<<"read Time stamp: "<<frame->header.stamp<<std::endl;
-//           std::cout<<"Matched Time stamp: "<<ros::Time(matchedFrame->time)<<std::endl;
+   double time_stamp_error=0.02;
 
-//           frame->header.stamp.toSec()==matchedFrame->time
-//           frame->header.stamp-ros::Time(matchedFrame->time)
-       if(abs(framekf->header.stamp.toSec()-copy->time)<0.06){
-           match =true;
-           matchtime_LSD=framekf->header.stamp.toSec();
-           matchtime_kf=copy->time;
-//           std::cout<<"BEST MATCH Time Stamp in Kalman Filter : "<<frame->header.stamp.toSec()<<std::endl << copy->time<<endl;
-           x_kf=framekf->x; y_kf=framekf->y; z_kf=framekf->z;
-           roll_kf=framekf->roll; pitch_kf=framekf->pitch; yaw_kf=framekf->yaw;
-           scale = framekf->scale;
+   while(match!=true && time_stamp_error<0.4){
+       BOOST_FOREACH(rosbag::MessageInstance const m, view)
+       {
+           framekf = m.instantiate<tum_ardrone::filter_state>();
+           if (framekf != NULL)
+    //           std::cout<<"read Time stamp: "<<frame->header.stamp<<std::endl;
+    //           std::cout<<"Matched Time stamp: "<<ros::Time(matchedFrame->time)<<std::endl;
+
+    //           frame->header.stamp.toSec()==matchedFrame->time
+    //           frame->header.stamp-ros::Time(matchedFrame->time)
+           if(abs(framekf->header.stamp.toSec()-matchedFrame->time)<time_stamp_error){
+               match =true;
+               matchtime_LSD=framekf->header.stamp.toSec();
+               matchtime_kf=copy->time;
+    //           std::cout<<"BEST MATCH Time Stamp in Kalman Filter : "<<frame->header.stamp.toSec()<<std::endl << copy->time<<endl;
+               x_kf=framekf->x; y_kf=framekf->y; z_kf=framekf->z;
+               roll_kf=framekf->roll; pitch_kf=framekf->pitch; yaw_kf=framekf->yaw;
+               scale = framekf->scale;
+           }
+           time_stamp_error+=0.05;
        }
+
    }
 //   std::cout<<"BEST MATCH Time Stamp in Kalman Filter : "<<std::setprecision(20)<<frame->header.stamp.toSec()<<std::endl <<std::setprecision(20)<< copy->time<<endl;
    if(match){
@@ -237,6 +243,51 @@ void getPositionFromKalmanFilter(){
    }
    else{
        cout<<"Not match!"<<endl;
+//       BOOST_FOREACH(rosbag::MessageInstance const m, view)
+//       {
+//           framekf = m.instantiate<tum_ardrone::filter_state>();
+//           if (framekf != NULL)
+//    //           std::cout<<"read Time stamp: "<<frame->header.stamp<<std::endl;
+//    //           std::cout<<"Matched Time stamp: "<<ros::Time(matchedFrame->time)<<std::endl;
+
+//    //           frame->header.stamp.toSec()==matchedFrame->time
+//    //           frame->header.stamp-ros::Time(matchedFrame->time)
+//           if(abs(framekf->header.stamp.toSec()-copy->time)<0.1){
+//               match =true;
+//               matchtime_LSD=framekf->header.stamp.toSec();
+//               matchtime_kf=copy->time;
+//    //           std::cout<<"BEST MATCH Time Stamp in Kalman Filter : "<<frame->header.stamp.toSec()<<std::endl << copy->time<<endl;
+//               x_kf=framekf->x; y_kf=framekf->y; z_kf=framekf->z;
+//               roll_kf=framekf->roll; pitch_kf=framekf->pitch; yaw_kf=framekf->yaw;
+//               scale = framekf->scale;
+//           }
+//       }
+//       if(match){
+//       std::cout<<"match!"<<std::endl;
+//       cout<<"matchtime_kf: " <<std::setprecision(20)<<matchtime_kf<<endl;
+//       cout<<"matchtime_LSD: " <<std::setprecision(20)<<matchtime_LSD<<endl;
+//       }else{
+//           cout<<"Not match!"<<endl;
+//           BOOST_FOREACH(rosbag::MessageInstance const m, view)
+//           {
+//               framekf = m.instantiate<tum_ardrone::filter_state>();
+//               if (framekf != NULL)
+//        //           std::cout<<"read Time stamp: "<<frame->header.stamp<<std::endl;
+//        //           std::cout<<"Matched Time stamp: "<<ros::Time(matchedFrame->time)<<std::endl;
+
+//        //           frame->header.stamp.toSec()==matchedFrame->time
+//        //           frame->header.stamp-ros::Time(matchedFrame->time)
+//               if(abs(framekf->header.stamp.toSec()-copy->time)<0.15){
+//                   match =true;
+//                   matchtime_LSD=framekf->header.stamp.toSec();
+//                   matchtime_kf=copy->time;
+//        //           std::cout<<"BEST MATCH Time Stamp in Kalman Filter : "<<frame->header.stamp.toSec()<<std::endl << copy->time<<endl;
+//                   x_kf=framekf->x; y_kf=framekf->y; z_kf=framekf->z;
+//                   roll_kf=framekf->roll; pitch_kf=framekf->pitch; yaw_kf=framekf->yaw;
+//                   scale = framekf->scale;
+//               }
+//            }
+//       }
    }
     KalmanFilterBag.close();
 }
@@ -250,7 +301,7 @@ int main(int argc, char **argv)
     ros::NodeHandle n;
     ros::Time recordBegin = ros::Time::now();
     ros::Time recordEnd = ros::Time::now();
-    ros::Duration recordTime(70);    //record for 3 minutes
+    ros::Duration recordTime(15);    //record for 3 minutes
     ros::Rate r(10); // 10 hz
 
     imageList.open("src/find_camera_pose/images/trainImageList.txt", ios_base::app);
@@ -305,8 +356,10 @@ int main(int argc, char **argv)
     cv::Mat rotation_vector; // Rotation in axis-angle form
     cv::Mat translation_vector;
 
+//cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector);
+    cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector, false, 100, 3.0, 100);
+    //cv::solvePnPRansac(objectPoints, imagePoints, K, distortion, rvec_est, tvec_est, false, 100, 3.0, 100);
 
-    cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector);
 
     cout<<"SolvePnP translation is: "<<translation_vector<<endl;
     cout<<"SolvePnP Rotation is: "<<rotation_vector<<endl;
@@ -314,26 +367,26 @@ int main(int argc, char **argv)
 
 //90deg Rotation (PTAMWrapper.cpp, Handleframe)
     //Key Frame to Hand camera in LSD coordinate
-    TooN::SE3<> LSDSLAM_ResultSE3;
-    LSDSLAM_ResultSE3.get_translation()=TooN::makeVector(translation_vector.at<double>(0,0),translation_vector.at<double>(1,0),translation_vector.at<double>(2,0));
+    TooN::SE3<> LSDSLAM_;
+    LSDSLAM_.get_translation()=TooN::makeVector(translation_vector.at<double>(0,0),translation_vector.at<double>(1,0),translation_vector.at<double>(2,0));
     cv::Mat rmat;
     cv::Rodrigues(rotation_vector, rmat);
     TooN::Matrix<3,3> mat;
     mat(0,0)=rmat.at<double>(0,0); mat(0,1)=rmat.at<double>(0,1); mat(0,2)=rmat.at<double>(0,2);
     mat(1,0)=rmat.at<double>(1,0); mat(1,1)=rmat.at<double>(1,1); mat(1,2)=rmat.at<double>(1,2);
     mat(2,0)=rmat.at<double>(2,0); mat(2,1)=rmat.at<double>(2,1); mat(2,2)=rmat.at<double>(2,2);
-    LSDSLAM_ResultSE3.get_rotation()=mat;
+    LSDSLAM_.get_rotation()=mat;
     cout << "Rotation matrix is"<< endl<<mat<<endl<<endl; //For check
 
     //Hand camera to Key Frame in LSD coordinate
-    TooN::SE3<> LSDSLAM_ResultSE3_camToKeyFrame;
-    LSDSLAM_ResultSE3_camToKeyFrame = LSDSLAM_ResultSE3.inverse();
-    cout<<"Translation camToKeyFrame in LSD coordinate is: "<<LSDSLAM_ResultSE3_camToKeyFrame.get_translation()<<endl<<endl;
+    TooN::SE3<> LSDSLAM__camToKeyFrame;
+    LSDSLAM__camToKeyFrame = LSDSLAM_.inverse();
+    cout<<"Translation camToKeyFrame in LSD coordinate is: "<<LSDSLAM__camToKeyFrame.get_translation()<<endl<<endl;
 
 
     //Hand camera to Key Frame in World coordinate
-    TooN::SE3<> LSDSLAM_ResultSE3_camToKeyFrame_World;
-    TooN::Matrix<3,3> rot_camTokeyFrame=LSDSLAM_ResultSE3_camToKeyFrame.get_rotation().get_matrix();
+    TooN::SE3<> LSDSLAM__camToKeyFrame_KF;
+    TooN::Matrix<3,3> rot_camTokeyFrame=LSDSLAM__camToKeyFrame.get_rotation().get_matrix();
     cv::Mat rmat_camToKeyframe=(cv::Mat_<double>(3,3)<<0,0,0,0,0,0,0,0,0);
     cv::Mat rvec_camToKeyframe;
     rmat_camToKeyframe.at<double>(0,0)=rot_camTokeyFrame(0,0); rmat_camToKeyframe.at<double>(0,1)=rot_camTokeyFrame(0,1); rmat_camToKeyframe.at<double>(0,2)=rot_camTokeyFrame(0,2);
@@ -347,36 +400,33 @@ int main(int argc, char **argv)
     mat_world(0,0)=rmat_World.at<double>(0,0); mat_world(0,1)=rmat_World.at<double>(0,1); mat_world(0,2)=rmat_World.at<double>(0,2);
     mat_world(1,0)=rmat_World.at<double>(1,0); mat_world(1,1)=rmat_World.at<double>(1,1); mat_world(1,2)=rmat_World.at<double>(1,2);
     mat_world(2,0)=rmat_World.at<double>(2,0); mat_world(2,1)=rmat_World.at<double>(2,1); mat_world(2,2)=rmat_World.at<double>(2,2);
-    LSDSLAM_ResultSE3_camToKeyFrame_World.get_rotation()=mat_world; //Rotation matrix in world coordinate
-    LSDSLAM_ResultSE3_camToKeyFrame_World.get_translation()=TooN::makeVector((LSDSLAM_ResultSE3_camToKeyFrame.get_translation())[0],(LSDSLAM_ResultSE3_camToKeyFrame.get_translation()[2]),-(LSDSLAM_ResultSE3_camToKeyFrame.get_translation())[1]); //Translation matrix in world coordinate
-    cout<<"Translation camToKeyFrame in World coordinate is: "<<LSDSLAM_ResultSE3_camToKeyFrame_World.get_translation()<<endl<<endl;
+    LSDSLAM__camToKeyFrame_KF.get_rotation()=mat_world; //Rotation matrix in world coordinate
+    LSDSLAM__camToKeyFrame_KF.get_translation()=TooN::makeVector((LSDSLAM__camToKeyFrame.get_translation())[0],(LSDSLAM__camToKeyFrame.get_translation()[2]),-(LSDSLAM__camToKeyFrame.get_translation())[1]); //Translation matrix in world coordinate
+    cout<<"Translation camToKeyFrame in KeyFrame coordinate is: "<<LSDSLAM__camToKeyFrame_KF.get_translation()<<endl<<endl;
 
-//    TooN::Vector<3> CameraOrigin = TooN::makeVector(0,0,0);
-//    TooN::Vector<3> CameraOrigin_fromKF_LSDCoordinate = LSDSLAM_ResultSE3_camToKeyFrame*CameraOrigin;
-//    TooN::Vector<3> CameraOrigin_fromKF_WorldCoordinate = TooN::makeVector(CameraOrigin_fromKF_LSDCoordinate[0],CameraOrigin_fromKF_LSDCoordinate[2],-CameraOrigin_fromKF_LSDCoordinate[1]);
-//    cout << "LSDSLAM_ResultSE3_camToKeyFrame"<< LSDSLAM_ResultSE3_camToKeyFrame <<  endl; //For check
-//    cout <<"Before Rotation Camera position is"<< endl<< LSDSLAM_ResultSE3_camToKeyFrame*TooN::makeVector(0,0,0) <<endl; //For check
-//    double testRoll = 0;
-//    double testPitch = 0;
-//    double testYaw = 0;
-//    rod2rpy(LSDSLAM_ResultSE3_camToKeyFrame.get_rotation(), &testRoll, &testPitch, &testYaw);
-//    testPitch += 90.0; //testRoll += 90.0; //    testPitch += 90.0;
-//    LSDSLAM_ResultSE3_camToKeyFrame.get_rotation() = rpy2rod(testRoll, testPitch, testYaw);
-//    cout << "LSDSLAM_ResultSE3_camToKeyFrame after rotation"<< LSDSLAM_ResultSE3_camToKeyFrame <<  endl; //For check
-//    cout <<"After Rotation translation_vector is"<< endl<< LSDSLAM_ResultSE3_camToKeyFrame*TooN::makeVector(0,0,0) <<endl; //For check
+
 
 
 
 
     //Calculate camera position in world coordinate
     TooN::Vector<3> origin = TooN::makeVector(0,0,0);
-    TooN::Vector<3> result = KeyFrameToWorldSE3*LSDSLAM_ResultSE3_camToKeyFrame_World*origin;
-//    cout <<"(KeyFrameToWorldSE3*LSDSLAM_ResultSE3_camToKeyFrame_World).get_translation() "<< endl<<(KeyFrameToWorldSE3*LSDSLAM_ResultSE3_camToKeyFrame_World).get_translation() <<endl;
+    TooN::Vector<3> result = KeyFrameToWorldSE3*LSDSLAM__camToKeyFrame_KF*origin;
+//    cout <<"(KeyFrameToWorldSE3*LSDSLAM__camToKeyFrame_World).get_translation() "<< endl<<(KeyFrameToWorldSE3*LSDSLAM__camToKeyFrame_World).get_translation() <<endl;
     double testRoll = 0;
     double testPitch = 0;
     double testYaw = 0;
-    rod2rpy((KeyFrameToWorldSE3*LSDSLAM_ResultSE3_camToKeyFrame_World).get_rotation(), &testRoll, &testPitch, &testYaw);
+    rod2rpy((KeyFrameToWorldSE3*LSDSLAM__camToKeyFrame_KF).get_rotation(), &testRoll, &testPitch, &testYaw);
 //    rod2rpy((KeyFrameToWorldSE3).get_rotation(), &testRoll, &testPitch, &testYaw); //for check
+
+//    cout <<"Before Rotation Camera position is"<< endl<< LSDSLAM__camToKeyFrame*TooN::makeVector(1,1,1) <<endl; //For check
+//    double Roll = 0;
+//    double Pitch = 0;
+//    double Yaw = 0;
+//    rod2rpy(LSDSLAM__camToKeyFrame.get_rotation(), &Roll, &Pitch, &Yaw);
+//    Pitch += 90.0;
+//    LSDSLAM__camToKeyFrame.get_rotation() = rpy2rod(Roll, Pitch, Yaw);
+//    cout <<"After Rotation Camera position is"<< endl<< LSDSLAM__camToKeyFrame*TooN::makeVector(1,1,1) <<endl; //For check
 
     cout<<"Kalman Filter Position (x,y,z,yaw): "<<endl<<x_kf<<","<<y_kf<<","<<z_kf<<","<<yaw_kf<<endl;
     cout <<"Camera position in World Coordinate (x,y,z,yaw): "<<endl<<result << "," << testYaw<< endl; //For check
