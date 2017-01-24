@@ -1,3 +1,7 @@
 frames
 images
 results
+*.png
+*.jpg
+*.gif
+*.bag
