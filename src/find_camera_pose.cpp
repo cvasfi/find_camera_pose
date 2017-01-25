@@ -63,14 +63,22 @@ void imageCB(const sensor_msgs::Image::ConstPtr& msg)
     cv::imwrite( oss.str(), cv_ptr->image );
     imageList <<msg->header.frame_id.data()<<".png"<<endl;
 }
+double maxFrameDelay=0;
+double maxKFDelay=0;
 
 void frameCB(const lsd_slam_viewer::keyframeMsgConstPtr& msg)
 {
+    if(msg->time>maxFrameDelay)
+        maxFrameDelay=ros::Time::now().toSec()-msg->time;
+
     frameBag.write("frames", ros::Time::now(), *msg);
 }
 
 //Hide
 void KalmanFilterCB(const tum_ardrone::filter_stateConstPtr& msg){
+    if(msg->header.stamp.toSec()>maxKFDelay)
+        maxKFDelay=ros::Time::now().toSec()-msg->header.stamp.toSec();
+
     KalmanFilterBag.write("Pose_KalmanFilter", ros::Time::now(), *msg);
 }
 
@@ -190,11 +198,12 @@ void getMatchedFrame(int fid){
     BOOST_FOREACH(rosbag::MessageInstance const m, view)
     {
        frame = m.instantiate<lsd_slam_viewer::keyframeMsg>();
-       if (frame != NULL)
+       if (frame != NULL){
            cout<<"read frame with id: "<<frame->id<<endl;
        if(frame->id==fid){
-           cout<<"I FOUND THE BEST MATCH!!!! : "<<frame->id<<endl;
+           cout<<"I FOUND THE BEST MATCH!!!! : "<<frame->id<<"timestamp is: "<<frame->time<<endl;
            matchedFrame=frame;
+       }
        }
 
     }
@@ -211,13 +220,20 @@ void getPositionFromKalmanFilter(){
    rosbag::View view(KalmanFilterBag, rosbag::TopicQuery("Pose_KalmanFilter"));
    tum_ardrone::filter_state::ConstPtr framekf;
    double time_stamp_error=0.02;
-
-   while(match!=true && time_stamp_error<0.4){
+   double min_difference=1000;
+   double min_timeStamp=0;
+   int it=0;
+  // while(match!=true && time_stamp_error<0.4){
        BOOST_FOREACH(rosbag::MessageInstance const m, view)
        {
+
            framekf = m.instantiate<tum_ardrone::filter_state>();
+           if (framekf != NULL){
+               std::cout<<"read Time stamp: "<<framekf->header.stamp<<std::endl;
+
+/*
            if (framekf != NULL)
-    //           std::cout<<"read Time stamp: "<<frame->header.stamp<<std::endl;
+               std::cout<<"read Time stamp: "<<framekf->header.stamp<<std::endl;
     //           std::cout<<"Matched Time stamp: "<<ros::Time(matchedFrame->time)<<std::endl;
 
     //           frame->header.stamp.toSec()==matchedFrame->time
@@ -231,10 +247,28 @@ void getPositionFromKalmanFilter(){
                roll_kf=framekf->roll; pitch_kf=framekf->pitch; yaw_kf=framekf->yaw;
                scale = framekf->scale;
            }
+*/
+           //test!!!!!!!!!!!!!!
+           if(min_difference>abs(framekf->header.stamp.toSec()-matchedFrame->time))
+            {
+               min_difference=abs(framekf->header.stamp.toSec()-matchedFrame->time);
+               min_timeStamp=framekf->header.stamp.toSec();
+               if(min_difference<2){
+                   match=true;
+                   matchtime_LSD=framekf->header.stamp.toSec();
+                   matchtime_kf=copy->time;
+        //           std::cout<<"BEST MATCH Time Stamp in Kalman Filter : "<<frame->header.stamp.toSec()<<std::endl << copy->time<<endl;
+                   x_kf=framekf->x; y_kf=framekf->y; z_kf=framekf->z;
+                   roll_kf=framekf->roll; pitch_kf=framekf->pitch; yaw_kf=framekf->yaw;
+                   scale = framekf->scale;
+               }
+           }
+           }
+
        }
-       time_stamp_error+=0.05;
-   }
-   cout << "time_stamp_error is " << time_stamp_error-0.05 << endl;
+ //      time_stamp_error+=0.05;
+  // }
+   cout << "time_stamp_error is " << min_difference << endl;
 
 //   std::cout<<"BEST MATCH Time Stamp in Kalman Filter : "<<std::setprecision(20)<<frame->header.stamp.toSec()<<std::endl <<std::setprecision(20)<< copy->time<<endl;
    if(match){
@@ -302,7 +336,7 @@ int main(int argc, char **argv)
     ros::NodeHandle n;
     ros::Time recordBegin = ros::Time::now();
     ros::Time recordEnd = ros::Time::now();
-    ros::Duration recordTime(15);    //record for 3 minutes
+    ros::Duration recordTime(35);    //record for 3 minutes
     ros::Rate r(10); // 10 hz
 
     imageList.open("src/find_camera_pose/images/trainImageList.txt", ios_base::app);
@@ -436,6 +470,9 @@ int main(int argc, char **argv)
     char buf[200];
     snprintf(buf,200,"gotoraw %.3f %.3f %.3f %.3f", result[0],result[1],result[2],testYaw);
     cout <<buf<<endl;
+
+    cout <<"max frame delay is: " << maxFrameDelay<<" max KF delay is: "<< maxKFDelay<< endl;
+
 
     cout << "Press Enter to delete the images";
     cin.ignore();
