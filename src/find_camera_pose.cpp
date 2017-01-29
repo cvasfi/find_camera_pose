@@ -72,7 +72,7 @@ void frameCB(const lsd_slam_viewer::keyframeMsgConstPtr& msg)
 {
     if(msg->time>maxFrameDelay)
         maxFrameDelay=ros::Time::now().toSec()-msg->time;
-    if(msg->time>=recordBegin)  //only write frames that have been processed after the application got started
+    if(msg->time>=recordBegin.toSec())  //only write frames that have been processed after the application got started
         frameBag.write("frames", ros::Time::now(), *msg);
 }
 
