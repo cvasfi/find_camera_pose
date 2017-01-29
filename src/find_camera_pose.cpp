@@ -44,6 +44,8 @@ rosbag::Bag KalmanFilterBag; //Hide
 float x_kf, y_kf, z_kf, roll_kf, pitch_kf, yaw_kf, scale_kf;
 float scale;
 
+ros::Time recordBegin;
+
 cv_bridge::CvImagePtr cv_ptr;
 ofstream imageList;
 
@@ -70,8 +72,8 @@ void frameCB(const lsd_slam_viewer::keyframeMsgConstPtr& msg)
 {
     if(msg->time>maxFrameDelay)
         maxFrameDelay=ros::Time::now().toSec()-msg->time;
-
-    frameBag.write("frames", ros::Time::now(), *msg);
+    if(msg->time>=recordBegin)  //only write frames that have been processed after the application got started
+        frameBag.write("frames", ros::Time::now(), *msg);
 }
 
 //Hide
@@ -334,7 +336,7 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "find_camera_pose");
 
     ros::NodeHandle n;
-    ros::Time recordBegin = ros::Time::now();
+    recordBegin = ros::Time::now();
     ros::Time recordEnd = ros::Time::now();
     ros::Duration recordTime(35);    //record for 3 minutes
     ros::Rate r(10); // 10 hz
