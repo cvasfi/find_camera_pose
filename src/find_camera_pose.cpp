@@ -25,12 +25,32 @@
 #include "tum_ardrone/filter_state.h"
 #include "matching.h"
 
+#define INITIAL 0
+#define EXPLORING 1
+#define EXPLORED 2
+#define WAITING 3
+#define INITIALIZE 4
+#define READY_TO_GO 5
 
 struct InputPointDense {
         float idepth;
         float idepth_var;
         unsigned char color[4];
 };
+
+class find_camera_pose_node{
+private:
+int drone_state;
+int drone_prev_state;
+ros::NodeHandle n;
+ros::Subscriber noCommandSub;
+ros::Publisher tum_ardrone_pub;
+std::string command_channel;
+ros::Duration recordTime;    //record for 3 minutes
+ros::Duration rec1;
+ros::Duration rec2;
+typedef boost::function<void(std::string)> PublishCommandFunction;
+PublishCommandFunction publish;
 
 vector<cv::Point2f> queryPoints;
 vector<cv::Point2f> selected2dPoints;
@@ -43,11 +63,26 @@ rosbag::Bag frameBag;
 rosbag::Bag KalmanFilterBag; //Hide
 float x_kf, y_kf, z_kf, roll_kf, pitch_kf, yaw_kf, scale_kf;
 float scale;
-
+double testRoll;
+double testPitch;
+double testYaw;
+//double maxFrameDelay=0;
+//double maxKFDelay=0;
 ros::Time recordBegin;
-
+ros::Subscriber subImages;
+ros::Subscriber subFrames;
+ros::Subscriber subKalmanFilter;
 cv_bridge::CvImagePtr cv_ptr;
 ofstream imageList;
+ros::Publisher noCommandsPublisher;
+
+cv::Mat rotation_vector; // Rotation in axis-angle form
+cv::Mat translation_vector;
+TooN::Vector<3> result;
+
+std::string finalCommand;
+
+int RecTime;
 
 void imageCB(const sensor_msgs::Image::ConstPtr& msg)
 {
@@ -68,12 +103,11 @@ void imageCB(const sensor_msgs::Image::ConstPtr& msg)
         imageList <<msg->header.frame_id.data()<<".png"<<endl;
         }
 }
-double maxFrameDelay=0;
-double maxKFDelay=0;
+
 
 void frameCB(const lsd_slam_viewer::keyframeMsgConstPtr& msg)
 {
-    if(msg->time>=recordBegin.toSec())  //only write frames that have been processed after the application got started
+//    if(msg->time>=recordBegin.toSec())  //only write frames that have been processed after the application got started
         frameBag.write("frames", ros::Time::now(), *msg);
 }
 
@@ -263,26 +297,334 @@ void getPositionFromKalmanFilter(){
 }
 
 
+pthread_mutex_t tum_ardrone_CS = PTHREAD_MUTEX_INITIALIZER;
+void publishCommand(ros::NodeHandle n, ros::Publisher tum_ardrone_pub, std::string command_channel, std::string c)
+{
+    std_msgs::String s;
+    s.data = c.c_str();
+//    pthread_mutex_lock(&tum_ardrone_CS);
+    tum_ardrone_pub.publish(s);
+//    pthread_mutex_unlock(&tum_ardrone_CS);
+}
 
-int main(int argc, char **argv)
- {
-    ros::init(argc, argv, "find_camera_pose");
+void noCommandCB(std_msgs::Empty msg){
 
-    ros::NodeHandle n;
-    recordBegin = ros::Time::now();
-    ros::Time recordEnd = ros::Time::now();
-    ros::Duration recordTime(85);    //record for 3 minutes
-    ros::Rate r(10); // 10 hz
+    cout<<"nocommand called"<<std::endl;
 
+    command_channel = n.resolveName("tum_ardrone/com");
+
+    switch(drone_state){
+    case INITIAL :
+    {
+        cout<<"drone state is1: "<<drone_state<<std::endl;
+        publishCommand(n,tum_ardrone_pub,command_channel,"c clearCommands");
+        publishCommand(n,tum_ardrone_pub,command_channel,"c newtakeoff");
+        publishCommand(n,tum_ardrone_pub,command_channel,"c start");
+
+        drone_state=INITIALIZE;
+        drone_prev_state=INITIAL;
+        break;
+    }
+    case INITIALIZE:
+    {
+        cout<<"drone state is: "<<drone_state<<std::endl;
+        ros::Duration r(3);    //record for 3 minutes
+        r.sleep();
+        std::string commands[] = { "setReference $POSE$",
+                                   "setInitialReachDist 0.2",
+                                   "setStayWithinDist 0.3",
+                                   "setStayTime 3",
+                                   "gotohov 0 0 0.25 0", "gotohov 0 0 -0.25 0", "gotohov 0 0 0.25 0"
+                                                   "gotohov 0 0 0 0", "gotohov 0 0 0 0"
+                                   };
+        for (int i = 0; i < sizeof(commands) / sizeof(std::string); ++i) {
+            std::stringstream c;
+            c << "c " << commands[i];
+            publishCommand(n,tum_ardrone_pub,command_channel,c.str());
+        }
+        publishCommand(n,tum_ardrone_pub,command_channel,"c start");
+        drone_prev_state=INITIALIZE;
+        drone_state=EXPLORING;
+    }
+    case EXPLORING :
+    {
+        ros::Duration r(4);
+        r.sleep();
+        cout<<"drone state is: "<<drone_state<<std::endl;
+        std::string commands[] = { "setReference $POSE$",
+                                   "setInitialReachDist 0.3",
+                                   "setStayWithinDist 0.4",
+                                   "setStayTime 0.1",
+
+                                                                          "goto 0 0 0 15",
+                                                                          "goto 0 0 -0.25 30",
+                                                                          "goto 0 0 0.25 40",
+                                                                          "goto 0 0 -0.25 30",
+                                                                          "goto 0 0 0.25 15",
+                                                                          "goto 0 0 -0.25 0",
+                                                                          "goto 0 0 0.25 -15",
+                                                                          "goto 0 0 -0.25 -30",
+                                                                             "goto 0 0 0.25 -15",
+
+                                                                          "goto 0 0 0 0"
+
+//                                  "goto 0 0 0 0       ",
+//                                  "goto 0 0 0.5 0       ",
+//                                  "goto 0 0 0 0       ",
+//                                  "goto 0 0 0.5 0       ",
+//                                  "goto 0 0 0 0       ",
+//                                  "goto 0 0 0.5 0       ",
+//                                  "goto 0.5 -0.5 0.5 0  ",
+//                                  "goto -0.5 -0.5 0.5 0 ",
+//                                  "goto -0.5 0.5 0.5 0  ",
+//                                  "goto 0.5 0.5 0.5 0   ",
+//                                  "goto 0.5 0.5 0 0   ",
+//                                  "goto -0.5 0.5 0 0  ",
+//                                  "goto -0.5 -0.5 0 0 ",
+//                                  "goto 0.5 -0.5 0 0  ",
+//                                  "goto 0 0 0 0       "
+
+
+
+//                                          "goto 0 0 0 20",
+//                                           "goto 0 0 -0.25 40",
+//                                           "goto 0 0 0.25 60",
+//                                           "goto 0 0 -0.25 80",
+//                                           "goto 0 0 0.25 100",
+//                                           "goto 0 0 -0.25 120",
+//                                           "goto 0 0 0.25 140",
+//                                           "goto 0 0 -0.25 160",
+//                                           "goto 0 0 0.25 180",
+//                                           "goto 0 0 -0.25 200",
+//                                           "goto 0 0 0.25 220",
+//                                           "goto 0 0 -0.25 240",
+//                                           "goto 0 0 0.25 260",
+//                                           "goto 0 0 -0.25 280",
+//                                           "goto 0 0 0.25 300",
+//                                           "goto 0 0 -0.25 320",
+//                                           "goto 0 0 0.25 340",
+//                                           "goto 0 0 -0.25 360",
+//                                           "goto 0 0 0 0",
+//                                           "goto 0 0 0 20",
+//                                           "goto 0 0 -0.25 40"
+
+
+                                  "goto 0.4 0 0 0       ",
+                                  "goto -0.4 0 0 0      ",
+                                  "goto 0 0 0.25 10     ",
+                                  "goto 0 0 -0.25 20    ",
+                                  "goto 0 0 0.25 30     ",
+                                  "goto 0 0 -0.25 40    ",
+                                  "goto 0 0 0.25 50     ",
+                                  "goto 0 0 -0.25 60    ",
+                                  "goto 0 0 0.25 70     ",
+                                  "goto 0 0 -0.25 80    ",
+                                  "goto 0 0 0.25 90     ",
+                                  "goto 0 0.4 0.25 90   ",
+                                  "goto 0 -0.4 0.25 90  ",
+                                  "goto 0 0 -0.25 100   ",
+                                  "goto 0 0 0.25 110    ",
+                                  "goto 0 0 -0.25 120   ",
+                                  "goto 0 0 0.25 130    ",
+                                  "goto 0 0 -0.25 140   ",
+                                  "goto 0 0 0.25 150    ",
+                                  "goto 0 0 -0.25 160   ",
+                                  "goto 0 0 0.25 170    ",
+                                  "goto 0 0 -0.25 180   ",
+                                  "goto 0.4 0 -0.25 180 ",
+                                  "goto -0.4 0 -0.25 180",
+                                  "goto 0 0 0.25 190    ",
+                                  "goto 0 0 -0.25 200   ",
+                                  "goto 0 0 0.25 210    ",
+                                  "goto 0 0 -0.25 220   ",
+                                  "goto 0 0 0.25 230    ",
+                                  "goto 0 0 -0.25 240   ",
+                                  "goto 0 0 0.25 250    ",
+                                  "goto 0 0 -0.25 260   ",
+                                  "goto 0 0 0.25 270    ",
+                                  "goto 0 0.4 0.25 270  ",
+                                  "goto 0 -0.4 0.25 270 ",
+                                  "goto 0 0 -0.25 280   ",
+                                  "goto 0 0 0.25 290    ",
+                                  "goto 0 0 -0.25 300   ",
+                                  "goto 0 0 0.25 310    ",
+                                  "goto 0 0 -0.25 320   ",
+                                  "goto 0 0 0.25 330    ",
+                                  "goto 0 0 -0.25 340   ",
+                                  "goto 0 0 0.25 350    ",
+                                  "goto 0 0 -0.25 360   ",
+                                  "goto 0 0 0 0         ",
+                                  "goto 0 0 -0.25 20    "
+
+                                   };
+        for (int i = 0; i < sizeof(commands) / sizeof(std::string); ++i) {
+            std::stringstream c;
+            c << "c " << commands[i];
+            publishCommand(n,tum_ardrone_pub,command_channel,c.str());
+        }
+        publishCommand(n,tum_ardrone_pub,command_channel,"c start");
+        drone_prev_state=EXPLORING;
+        drone_state=EXPLORED;
+        cout<<"sent the exploration command. state is now explored."<<std::endl;
+        break;
+    }
+    case EXPLORED :
+    {
+        ros::Rate rr(10);
+        cout<<"drone state is: "<<drone_state<<std::endl;
+        publishCommand(n,tum_ardrone_pub,command_channel,"c clearCommands");
+        publishCommand(n,tum_ardrone_pub,command_channel,"c land");
+        publishCommand(n,tum_ardrone_pub,command_channel,"c start");
+        drone_prev_state=EXPLORED;
+        drone_state=WAITING;
+        break;
+    }
+    case WAITING :
+    {
+        cout<<"drone state is: "<<drone_state<<std::endl;
+        drone_prev_state=WAITING;
+        break;
+    }
+    case READY_TO_GO :
+    {
+        cout<<"drone state is: "<<drone_state<<std::endl;
+        cout<<"prev drone state is: "<<drone_prev_state<<std::endl;
+        if(drone_prev_state==EXPLORED || drone_prev_state==WAITING)
+        {
+            publishCommand(n,tum_ardrone_pub,command_channel,"c clearCommands");
+            publishCommand(n,tum_ardrone_pub,command_channel,"c newtakeoff");
+            publishCommand(n,tum_ardrone_pub,command_channel,"c start");
+            drone_prev_state=READY_TO_GO;
+            drone_state=READY_TO_GO;
+        }
+        else
+        {            cout<<"sending gotoraw!!!!!!!!!!!!!!!!!!!! "<<std::endl;
+
+            publishCommand(n,tum_ardrone_pub,command_channel,"c clearCommands");
+            publishCommand(n,tum_ardrone_pub,command_channel, finalCommand);
+            publishCommand(n,tum_ardrone_pub,command_channel,"c start");
+            drone_prev_state=READY_TO_GO;
+            drone_state=WAITING;
+        }
+    //    publishCommand(n,tum_ardrone_pub,command_channel,"c land");
+
+        break;
+    }
+    default :
+        drone_state=WAITING;
+        break;
+
+    }
+
+
+}
+
+void calculateCommand(){
+    TooN::SE3<> KeyFrameToWorldSE3;
+    KeyFrameToWorldSE3.get_translation()=TooN::makeVector(x_kf,y_kf,z_kf);
+    KeyFrameToWorldSE3.get_rotation() = rpy2rod(roll_kf, pitch_kf, yaw_kf);
+    //90deg Rotation (PTAMWrapper.cpp, Handleframe)
+        //Key Frame to Hand camera in LSD coordinate
+        TooN::SE3<> LSDSLAM_;
+        LSDSLAM_.get_translation()=TooN::makeVector(translation_vector.at<double>(0,0),translation_vector.at<double>(1,0),translation_vector.at<double>(2,0));
+        cv::Mat rmat;
+        cv::Rodrigues(rotation_vector, rmat);
+        TooN::Matrix<3,3> mat;
+        mat(0,0)=rmat.at<double>(0,0); mat(0,1)=rmat.at<double>(0,1); mat(0,2)=rmat.at<double>(0,2);
+        mat(1,0)=rmat.at<double>(1,0); mat(1,1)=rmat.at<double>(1,1); mat(1,2)=rmat.at<double>(1,2);
+        mat(2,0)=rmat.at<double>(2,0); mat(2,1)=rmat.at<double>(2,1); mat(2,2)=rmat.at<double>(2,2);
+        LSDSLAM_.get_rotation()=mat;
+    //    cout << "Rotation matrix is"<< endl<<mat<<endl<<endl; //For check
+
+        //Hand camera to Key Frame in LSD coordinate
+        TooN::SE3<> LSDSLAM__camToKeyFrame;
+        LSDSLAM__camToKeyFrame = LSDSLAM_.inverse();
+    //    cout<<"Translation camToKeyFrame in LSD coordinate is: "<<LSDSLAM__camToKeyFrame.get_translation()<<endl<<endl;
+
+
+        //Hand camera to Key Frame in World coordinate
+        TooN::SE3<> LSDSLAM__camToKeyFrame_KF;
+        TooN::Matrix<3,3> rot_camTokeyFrame=LSDSLAM__camToKeyFrame.get_rotation().get_matrix();
+        cv::Mat rmat_camToKeyframe=(cv::Mat_<double>(3,3)<<0,0,0,0,0,0,0,0,0);
+        cv::Mat rvec_camToKeyframe;
+        rmat_camToKeyframe.at<double>(0,0)=rot_camTokeyFrame(0,0); rmat_camToKeyframe.at<double>(0,1)=rot_camTokeyFrame(0,1); rmat_camToKeyframe.at<double>(0,2)=rot_camTokeyFrame(0,2);
+        rmat_camToKeyframe.at<double>(1,0)=rot_camTokeyFrame(1,0); rmat_camToKeyframe.at<double>(1,1)=rot_camTokeyFrame(1,1); rmat_camToKeyframe.at<double>(1,2)=rot_camTokeyFrame(1,2);
+        rmat_camToKeyframe.at<double>(2,0)=rot_camTokeyFrame(2,0); rmat_camToKeyframe.at<double>(2,1)=rot_camTokeyFrame(2,1); rmat_camToKeyframe.at<double>(2,2)=rot_camTokeyFrame(2,2);
+        cv::Rodrigues(rmat_camToKeyframe, rvec_camToKeyframe); //Transform rotation matrix to rotation vector
+        cv::Mat rotation_vector_World = (cv::Mat_<double>(3,1)<<rvec_camToKeyframe.at<double>(0,0),rvec_camToKeyframe.at<double>(2,0),-rvec_camToKeyframe.at<double>(1,0)); //Add 90 degree rotation
+        cv::Mat rmat_World;
+        cv::Rodrigues(rotation_vector_World, rmat_World); //Transform rotation vector to rotation matrix again
+        TooN::Matrix<3,3> mat_world; //Rotation matrix in world coordinate
+        mat_world(0,0)=rmat_World.at<double>(0,0); mat_world(0,1)=rmat_World.at<double>(0,1); mat_world(0,2)=rmat_World.at<double>(0,2);
+        mat_world(1,0)=rmat_World.at<double>(1,0); mat_world(1,1)=rmat_World.at<double>(1,1); mat_world(1,2)=rmat_World.at<double>(1,2);
+        mat_world(2,0)=rmat_World.at<double>(2,0); mat_world(2,1)=rmat_World.at<double>(2,1); mat_world(2,2)=rmat_World.at<double>(2,2);
+        LSDSLAM__camToKeyFrame_KF.get_rotation()=mat_world; //Rotation matrix in world coordinate
+        LSDSLAM__camToKeyFrame_KF.get_translation()=TooN::makeVector((LSDSLAM__camToKeyFrame.get_translation())[0],(LSDSLAM__camToKeyFrame.get_translation()[2]),-(LSDSLAM__camToKeyFrame.get_translation())[1]); //Translation matrix in world coordinate
+    //    cout<<"Translation camToKeyFrame in KeyFrame coordinate is: "<<LSDSLAM__camToKeyFrame_KF.get_translation()<<endl<<endl;
+
+
+
+        //Calculate camera position in world coordinate
+        TooN::Vector<3> origin = TooN::makeVector(0,0,0);
+        result = KeyFrameToWorldSE3*LSDSLAM__camToKeyFrame_KF*origin;
+    //    cout <<"(KeyFrameToWorldSE3*LSDSLAM__camToKeyFrame_World).get_translation() "<< endl<<(KeyFrameToWorldSE3*LSDSLAM__camToKeyFrame_World).get_translation() <<endl;
+
+        rod2rpy((KeyFrameToWorldSE3*LSDSLAM__camToKeyFrame_KF).get_rotation(), &testRoll, &testPitch, &testYaw);
+
+
+        cout<<"Kalman Filter Position (x,y,z,yaw): "<<endl<<x_kf<<","<<y_kf<<","<<z_kf<<","<<yaw_kf<<endl;
+        cout <<"Camera position in World Coordinate (x,y,z,yaw): "<<endl<<result << "," << testYaw<< endl; //For check
+        cout <<"Dıfference is (x,y,z,yaw): "<<endl<<result[0]-x_kf << "," <<result[1]-y_kf << " , "<<result[2]-z_kf <<" , "<<  testYaw - yaw_kf<< endl; //For chec
+}
+public:
+
+find_camera_pose_node(ros::NodeHandle nh) :
+    n(nh)
+  {
+    system("exec rm -r src/find_camera_pose/images/*");
+    system("exec rm -r src/find_camera_pose/results/*");
+    drone_state=INITIAL;
+    drone_prev_state=INITIAL;
+    testRoll = 0;
+    testPitch = 0;
+    testYaw = 0;
     imageList.open("src/find_camera_pose/images/trainImageList.txt", ios_base::app);
     frameBag.open("src/find_camera_pose/frames/frames.bag", rosbag::bagmode::Write);
     KalmanFilterBag.open("src/find_camera_pose/KalmanFilter/KalmanFilter.bag", rosbag::bagmode::Write);
 
-    undistortImage();
-    ros::Subscriber subImages = n.subscribe("/lsd_slam/keyImages", 1000, imageCB);
-    ros::Subscriber subFrames = n.subscribe("/lsd_slam/keyframes", 1000, frameCB);
-    ros::Subscriber subKalmanFilter = n.subscribe("/ardrone/predictedPose", 1000, KalmanFilterCB);
+    noCommandSub = nh.subscribe("/tum_ardrone/nocommands",1, &find_camera_pose_node::noCommandCB, this );
+    subImages = nh.subscribe("/lsd_slam/keyImages", 1000, &find_camera_pose_node::imageCB,this);
+    subFrames = nh.subscribe("/lsd_slam/keyframes", 1000, &find_camera_pose_node::frameCB,this);
+    subKalmanFilter = nh.subscribe("/ardrone/predictedPose", 1000, &find_camera_pose_node::KalmanFilterCB,this);
+    rec1=ros::Duration(1);
+    rec2=ros::Duration(10);
+    command_channel = nh.resolveName("tum_ardrone/com");
+    tum_ardrone_pub = nh.advertise<std_msgs::String>(command_channel,50);
+    noCommandsPublisher= n.advertise<std_msgs::Empty>("/tum_ardrone/nocommands", 1);
+  }
+void run(){
 
+
+
+    std::cout << "Record Time: " << std::endl;
+
+    cin >> RecTime;
+    recordTime=ros::Duration(RecTime);    //record for 3 minutes
+    ros::Rate r(10); // 10 hz
+
+    r.sleep();
+    publishCommand(n,tum_ardrone_pub,n.resolveName("tum_ardrone/com"),"c clearCommands");
+    publishCommand(n,tum_ardrone_pub,n.resolveName("tum_ardrone/com"),"c discover1");
+    publishCommand(n,tum_ardrone_pub,n.resolveName("tum_ardrone/com"),"c start");
+    ros::spinOnce();
+    recordBegin = ros::Time::now();
+    ros::Time recordEnd = ros::Time::now();
+
+    undistortImage();
+    ros::spinOnce();
+
+//    rec1.sleep();
+        noCommandsPublisher.publish(std_msgs::Empty());
 
     //mtmi()
     while(ros::ok() && (recordEnd-recordBegin)<recordTime){
@@ -301,7 +643,6 @@ int main(int argc, char **argv)
     queryPoints=getQueryCoordinates();
     match2dPoints=getMatchCoordinates();
 
-//    cout<<"MatchID is : "<<match_ID<<endl;
 
 
     getMatchedFrame(match_ID);
@@ -312,107 +653,79 @@ int main(int argc, char **argv)
 
 
     //Key Frame position in world coordinate
-    TooN::SE3<> KeyFrameToWorldSE3;
-    KeyFrameToWorldSE3.get_translation()=TooN::makeVector(x_kf,y_kf,z_kf);
-    KeyFrameToWorldSE3.get_rotation() = rpy2rod(roll_kf, pitch_kf, yaw_kf);
+
     cout<<"MatchID is : "<<match_ID<<endl;
 //    cout<<"size of 2d points: "<<match2dPoints.size()<<endl;
 //    cout<<"size of 3d points: "<<match3dPoints.size()<<endl;
-    cout<<"size of selected 2d points: "<<selected2dPoints.size()<<endl;
+    int pointNumber=selected2dPoints.size();
+    cout<<"size of selected 2d points: "<<pointNumber<<endl;
 
     //  SolvePnP
     cv::Mat K = (cv::Mat_<float>(3, 3) << matchedFrame->fx, 0, matchedFrame->cx, 0, matchedFrame->fy, matchedFrame->cy, 0, 0, 1);
     cv::Mat distortion = (cv::Mat_<float>(4, 1) << 0, 0, 0, 0);
-    cv::Mat rotation_vector; // Rotation in axis-angle form
-    cv::Mat translation_vector;
+
+double solvePnPThreshold=5.0;
+if(pointNumber>150)
+    solvePnPThreshold=4.0;
+if(pointNumber>250)
+    solvePnPThreshold=3.0;
+if(pointNumber>400)
+    solvePnPThreshold=2.0;
+
+
 
 //cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector);
-    cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector, false, 100, 8.0, 100);
-
-
-//    cout<<"SolvePnP translation is: "<<translation_vector<<endl;
-//    cout<<"SolvePnP Rotation is: "<<rotation_vector<<endl;
-
-
-//90deg Rotation (PTAMWrapper.cpp, Handleframe)
-    //Key Frame to Hand camera in LSD coordinate
-    TooN::SE3<> LSDSLAM_;
-    LSDSLAM_.get_translation()=TooN::makeVector(translation_vector.at<double>(0,0),translation_vector.at<double>(1,0),translation_vector.at<double>(2,0));
-    cv::Mat rmat;
-    cv::Rodrigues(rotation_vector, rmat);
-    TooN::Matrix<3,3> mat;
-    mat(0,0)=rmat.at<double>(0,0); mat(0,1)=rmat.at<double>(0,1); mat(0,2)=rmat.at<double>(0,2);
-    mat(1,0)=rmat.at<double>(1,0); mat(1,1)=rmat.at<double>(1,1); mat(1,2)=rmat.at<double>(1,2);
-    mat(2,0)=rmat.at<double>(2,0); mat(2,1)=rmat.at<double>(2,1); mat(2,2)=rmat.at<double>(2,2);
-    LSDSLAM_.get_rotation()=mat;
-//    cout << "Rotation matrix is"<< endl<<mat<<endl<<endl; //For check
-
-    //Hand camera to Key Frame in LSD coordinate
-    TooN::SE3<> LSDSLAM__camToKeyFrame;
-    LSDSLAM__camToKeyFrame = LSDSLAM_.inverse();
-//    cout<<"Translation camToKeyFrame in LSD coordinate is: "<<LSDSLAM__camToKeyFrame.get_translation()<<endl<<endl;
-
-
-    //Hand camera to Key Frame in World coordinate
-    TooN::SE3<> LSDSLAM__camToKeyFrame_KF;
-    TooN::Matrix<3,3> rot_camTokeyFrame=LSDSLAM__camToKeyFrame.get_rotation().get_matrix();
-    cv::Mat rmat_camToKeyframe=(cv::Mat_<double>(3,3)<<0,0,0,0,0,0,0,0,0);
-    cv::Mat rvec_camToKeyframe;
-    rmat_camToKeyframe.at<double>(0,0)=rot_camTokeyFrame(0,0); rmat_camToKeyframe.at<double>(0,1)=rot_camTokeyFrame(0,1); rmat_camToKeyframe.at<double>(0,2)=rot_camTokeyFrame(0,2);
-    rmat_camToKeyframe.at<double>(1,0)=rot_camTokeyFrame(1,0); rmat_camToKeyframe.at<double>(1,1)=rot_camTokeyFrame(1,1); rmat_camToKeyframe.at<double>(1,2)=rot_camTokeyFrame(1,2);
-    rmat_camToKeyframe.at<double>(2,0)=rot_camTokeyFrame(2,0); rmat_camToKeyframe.at<double>(2,1)=rot_camTokeyFrame(2,1); rmat_camToKeyframe.at<double>(2,2)=rot_camTokeyFrame(2,2);
-    cv::Rodrigues(rmat_camToKeyframe, rvec_camToKeyframe); //Transform rotation matrix to rotation vector
-    cv::Mat rotation_vector_World = (cv::Mat_<double>(3,1)<<rvec_camToKeyframe.at<double>(0,0),rvec_camToKeyframe.at<double>(2,0),-rvec_camToKeyframe.at<double>(1,0)); //Add 90 degree rotation
-    cv::Mat rmat_World;
-    cv::Rodrigues(rotation_vector_World, rmat_World); //Transform rotation vector to rotation matrix again
-    TooN::Matrix<3,3> mat_world; //Rotation matrix in world coordinate
-    mat_world(0,0)=rmat_World.at<double>(0,0); mat_world(0,1)=rmat_World.at<double>(0,1); mat_world(0,2)=rmat_World.at<double>(0,2);
-    mat_world(1,0)=rmat_World.at<double>(1,0); mat_world(1,1)=rmat_World.at<double>(1,1); mat_world(1,2)=rmat_World.at<double>(1,2);
-    mat_world(2,0)=rmat_World.at<double>(2,0); mat_world(2,1)=rmat_World.at<double>(2,1); mat_world(2,2)=rmat_World.at<double>(2,2);
-    LSDSLAM__camToKeyFrame_KF.get_rotation()=mat_world; //Rotation matrix in world coordinate
-    LSDSLAM__camToKeyFrame_KF.get_translation()=TooN::makeVector((LSDSLAM__camToKeyFrame.get_translation())[0],(LSDSLAM__camToKeyFrame.get_translation()[2]),-(LSDSLAM__camToKeyFrame.get_translation())[1]); //Translation matrix in world coordinate
-//    cout<<"Translation camToKeyFrame in KeyFrame coordinate is: "<<LSDSLAM__camToKeyFrame_KF.get_translation()<<endl<<endl;
+    cout<<"solvepnp threshold is: "<<solvePnPThreshold<<endl;
+    cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector, false, 100, solvePnPThreshold, 100);
 
 
 
-    //Calculate camera position in world coordinate
-    TooN::Vector<3> origin = TooN::makeVector(0,0,0);
-    TooN::Vector<3> result = KeyFrameToWorldSE3*LSDSLAM__camToKeyFrame_KF*origin;
-//    cout <<"(KeyFrameToWorldSE3*LSDSLAM__camToKeyFrame_World).get_translation() "<< endl<<(KeyFrameToWorldSE3*LSDSLAM__camToKeyFrame_World).get_translation() <<endl;
-    double testRoll = 0;
-    double testPitch = 0;
-    double testYaw = 0;
-    rod2rpy((KeyFrameToWorldSE3*LSDSLAM__camToKeyFrame_KF).get_rotation(), &testRoll, &testPitch, &testYaw);
-//    rod2rpy((KeyFrameToWorldSE3).get_rotation(), &testRoll, &testPitch, &testYaw); //for check
-
-//    cout <<"Before Rotation Camera position is"<< endl<< LSDSLAM__camToKeyFrame*TooN::makeVector(0,0,0) <<endl; //For check
-//    double Roll = 0;
-//    double Pitch = 0;
-//    double Yaw = 0;
-//    rod2rpy(LSDSLAM__camToKeyFrame.get_rotation(), &Roll, &Pitch, &Yaw);
-//    Pitch += 90.0;
-//    LSDSLAM__camToKeyFrame.get_rotation() = rpy2rod(Roll, Pitch, Yaw);
-//    cout <<"After Rotation Camera position is"<< endl<< LSDSLAM__camToKeyFrame*TooN::makeVector(0,0,0) <<endl; //For check
-
-    cout<<"Kalman Filter Position (x,y,z,yaw): "<<endl<<x_kf<<","<<y_kf<<","<<z_kf<<","<<yaw_kf<<endl;
-    cout <<"Camera position in World Coordinate (x,y,z,yaw): "<<endl<<result << "," << testYaw<< endl; //For check
-    cout <<"Dıfference ıs (x,y,z,yaw): "<<endl<<result[0]-x_kf << "," <<result[1]-y_kf << " , "<<result[2]-z_kf <<" , "<<  testYaw - yaw_kf<< endl; //For check
-
+calculateCommand();
 
     cout << "Command is"<< endl;
 
-    char buf[200];
-    snprintf(buf,200,"gotoraw %.3f %.3f %.3f %.3f", result[0],result[1],result[2],testYaw);
-    cout <<buf<<endl;
+//    snprintf(buf,200,"gotoraw %.3f %.3f %.3f %.3f", result[0],result[1],result[2],testYaw);
+//    cout <<buf<<endl;
 
-    cout << "Press Enter to delete the images";
-    cin.ignore();
-    system("exec rm -r src/find_camera_pose/images/*");
-    system("exec rm -r src/find_camera_pose/results/*");
+
+    char buf[200];
+//    snprintf(buf,200,"gotoraw %.3f %.3f %.3f %.3f", result[0]/3,result[1]/3,result[2]/3,testYaw);
+    ostringstream oss;
+    oss << "c gotoraw " <<result[0]/3<<" "<<result[1]/3<<" "<<result[2]/3<<" "<<testYaw;
+    finalCommand=oss.str();
+    cout <<finalCommand<<endl;
+
+    char buf2[200];
+    snprintf(buf2,200,"gotoraw %.3f %.3f %.3f %.3f", 2*result[0]/3,2*result[1]/3,2*result[2]/3,testYaw);
+    cout <<buf2<<endl;
+
+    char buf3[200];
+    snprintf(buf3,200,"gotoraw %.3f %.3f %.3f %.3f", result[0],result[1],result[2],testYaw);
+    cout <<buf3<<endl;
+
+    drone_state=READY_TO_GO;
+
+
+    if(drone_prev_state==WAITING || drone_prev_state==EXPLORED)
+    {
+        cout<<"publishing nocommand. state: "<<drone_state<<std::endl;
+        noCommandsPublisher.publish(std_msgs::Empty());
+    }
+
+    ros::spin();
+}
+
+};
+
+int main(int argc, char **argv)
+ {
+    ros::init(argc, argv, "find_camera_pose");
+    ros::NodeHandle n;
+
+    find_camera_pose_node f(n);
+    f.run();
 
   return 0;
 }
-
-
 
 

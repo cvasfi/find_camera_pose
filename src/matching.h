@@ -15,7 +15,7 @@
 using namespace cv;
 using namespace std;
 
-const string defaultDetectorType = "SIFT";
+const string defaultDetectorType = "FAST";
 const string defaultDescriptorType = "SIFT";
 const string defaultMatcherType = "FlannBased";
 const string defaultQueryImageName = "src/find_camera_pose/query.png";
