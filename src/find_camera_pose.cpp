@@ -24,13 +24,21 @@
 #include "HelperFunctions.h"
 #include "tum_ardrone/filter_state.h"
 #include "matching.h"
+#include <boost/assign/std/vector.hpp>
+
+#include <sys/types.h>
+#include <unistd.h>
+
+#include <stdlib.h>
 
 #define INITIAL 0
-#define EXPLORING 1
-#define EXPLORED 2
-#define WAITING 3
-#define INITIALIZE 4
+#define INITIALIZE 1
+#define EXPLORING 2
+#define EXPLORED 3
+#define WAITING 4
 #define READY_TO_GO 5
+
+using namespace boost::assign;
 
 struct InputPointDense {
         float idepth;
@@ -75,6 +83,14 @@ ros::Subscriber subKalmanFilter;
 cv_bridge::CvImagePtr cv_ptr;
 ofstream imageList;
 ros::Publisher noCommandsPublisher;
+
+std::vector<std::string> initializeCommands;
+std::vector<std::string> simpleExploreCommands;
+std::vector<std::string> _360exploreCommands;
+std::vector<std::string> selectedCommands;
+int exploration_mode;
+
+pid_t pID;
 
 cv::Mat rotation_vector; // Rotation in axis-angle form
 cv::Mat translation_vector;
@@ -326,20 +342,32 @@ void noCommandCB(std_msgs::Empty msg){
         break;
     }
     case INITIALIZE:
-    {
+        {
         cout<<"drone state is: "<<drone_state<<std::endl;
+//        pID = fork();
+//        if (pID == 0)                // child
+//        {
+//            cout<<"drone state is: "<<drone_state<<std::endl;
+//            system("exec roslaunch bebop_converter lsd_slam.launch ");
+
+//         }
+//         else if (pID < 0)            // failed to fork
+//         {
+//             cerr << "Failed to fork" << endl;
+//             exit(1);
+//             // Throw exception
+//         }
+//         else                                   // parent
+//         {
+//           // Code only executed by parent process
+//         }
+
         ros::Duration r(3);    //record for 3 minutes
         r.sleep();
-        std::string commands[] = { "setReference $POSE$",
-                                   "setInitialReachDist 0.2",
-                                   "setStayWithinDist 0.3",
-                                   "setStayTime 3",
-                                   "gotohov 0 0 0.25 0", "gotohov 0 0 -0.25 0", "gotohov 0 0 0.25 0"
-                                                   "gotohov 0 0 0 0", "gotohov 0 0 0 0"
-                                   };
-        for (int i = 0; i < sizeof(commands) / sizeof(std::string); ++i) {
+        publishCommand(n,tum_ardrone_pub,command_channel,"c clearCommands");
+        for (int i = 0; i < initializeCommands.size(); ++i) {
             std::stringstream c;
-            c << "c " << commands[i];
+            c << "c " << initializeCommands[i];
             publishCommand(n,tum_ardrone_pub,command_channel,c.str());
         }
         publishCommand(n,tum_ardrone_pub,command_channel,"c start");
@@ -351,115 +379,11 @@ void noCommandCB(std_msgs::Empty msg){
         ros::Duration r(4);
         r.sleep();
         cout<<"drone state is: "<<drone_state<<std::endl;
-        std::string commands[] = { "setReference $POSE$",
-                                   "setInitialReachDist 0.3",
-                                   "setStayWithinDist 0.4",
-                                   "setStayTime 0.1",
 
-                                                                          "goto 0 0 0 15",
-                                                                          "goto 0 0 -0.25 30",
-                                                                          "goto 0 0 0.25 40",
-                                                                          "goto 0 0 -0.25 30",
-                                                                          "goto 0 0 0.25 15",
-                                                                          "goto 0 0 -0.25 0",
-                                                                          "goto 0 0 0.25 -15",
-                                                                          "goto 0 0 -0.25 -30",
-                                                                             "goto 0 0 0.25 -15",
-
-                                                                          "goto 0 0 0 0"
-
-//                                  "goto 0 0 0 0       ",
-//                                  "goto 0 0 0.5 0       ",
-//                                  "goto 0 0 0 0       ",
-//                                  "goto 0 0 0.5 0       ",
-//                                  "goto 0 0 0 0       ",
-//                                  "goto 0 0 0.5 0       ",
-//                                  "goto 0.5 -0.5 0.5 0  ",
-//                                  "goto -0.5 -0.5 0.5 0 ",
-//                                  "goto -0.5 0.5 0.5 0  ",
-//                                  "goto 0.5 0.5 0.5 0   ",
-//                                  "goto 0.5 0.5 0 0   ",
-//                                  "goto -0.5 0.5 0 0  ",
-//                                  "goto -0.5 -0.5 0 0 ",
-//                                  "goto 0.5 -0.5 0 0  ",
-//                                  "goto 0 0 0 0       "
-
-
-
-//                                          "goto 0 0 0 20",
-//                                           "goto 0 0 -0.25 40",
-//                                           "goto 0 0 0.25 60",
-//                                           "goto 0 0 -0.25 80",
-//                                           "goto 0 0 0.25 100",
-//                                           "goto 0 0 -0.25 120",
-//                                           "goto 0 0 0.25 140",
-//                                           "goto 0 0 -0.25 160",
-//                                           "goto 0 0 0.25 180",
-//                                           "goto 0 0 -0.25 200",
-//                                           "goto 0 0 0.25 220",
-//                                           "goto 0 0 -0.25 240",
-//                                           "goto 0 0 0.25 260",
-//                                           "goto 0 0 -0.25 280",
-//                                           "goto 0 0 0.25 300",
-//                                           "goto 0 0 -0.25 320",
-//                                           "goto 0 0 0.25 340",
-//                                           "goto 0 0 -0.25 360",
-//                                           "goto 0 0 0 0",
-//                                           "goto 0 0 0 20",
-//                                           "goto 0 0 -0.25 40"
-
-
-                                  "goto 0.4 0 0 0       ",
-                                  "goto -0.4 0 0 0      ",
-                                  "goto 0 0 0.25 10     ",
-                                  "goto 0 0 -0.25 20    ",
-                                  "goto 0 0 0.25 30     ",
-                                  "goto 0 0 -0.25 40    ",
-                                  "goto 0 0 0.25 50     ",
-                                  "goto 0 0 -0.25 60    ",
-                                  "goto 0 0 0.25 70     ",
-                                  "goto 0 0 -0.25 80    ",
-                                  "goto 0 0 0.25 90     ",
-                                  "goto 0 0.4 0.25 90   ",
-                                  "goto 0 -0.4 0.25 90  ",
-                                  "goto 0 0 -0.25 100   ",
-                                  "goto 0 0 0.25 110    ",
-                                  "goto 0 0 -0.25 120   ",
-                                  "goto 0 0 0.25 130    ",
-                                  "goto 0 0 -0.25 140   ",
-                                  "goto 0 0 0.25 150    ",
-                                  "goto 0 0 -0.25 160   ",
-                                  "goto 0 0 0.25 170    ",
-                                  "goto 0 0 -0.25 180   ",
-                                  "goto 0.4 0 -0.25 180 ",
-                                  "goto -0.4 0 -0.25 180",
-                                  "goto 0 0 0.25 190    ",
-                                  "goto 0 0 -0.25 200   ",
-                                  "goto 0 0 0.25 210    ",
-                                  "goto 0 0 -0.25 220   ",
-                                  "goto 0 0 0.25 230    ",
-                                  "goto 0 0 -0.25 240   ",
-                                  "goto 0 0 0.25 250    ",
-                                  "goto 0 0 -0.25 260   ",
-                                  "goto 0 0 0.25 270    ",
-                                  "goto 0 0.4 0.25 270  ",
-                                  "goto 0 -0.4 0.25 270 ",
-                                  "goto 0 0 -0.25 280   ",
-                                  "goto 0 0 0.25 290    ",
-                                  "goto 0 0 -0.25 300   ",
-                                  "goto 0 0 0.25 310    ",
-                                  "goto 0 0 -0.25 320   ",
-                                  "goto 0 0 0.25 330    ",
-                                  "goto 0 0 -0.25 340   ",
-                                  "goto 0 0 0.25 350    ",
-                                  "goto 0 0 -0.25 360   ",
-                                  "goto 0 0 0 0         ",
-                                  "goto 0 0 -0.25 20    "
-
-                                   };
-        for (int i = 0; i < sizeof(commands) / sizeof(std::string); ++i) {
+        publishCommand(n,tum_ardrone_pub,command_channel,"c clearCommands");
+        for (int i = 0; i < selectedCommands.size(); ++i) {
             std::stringstream c;
-            c << "c " << commands[i];
+            c << "c " << selectedCommands[i];
             publishCommand(n,tum_ardrone_pub,command_channel,c.str());
         }
         publishCommand(n,tum_ardrone_pub,command_channel,"c start");
@@ -498,7 +422,7 @@ void noCommandCB(std_msgs::Empty msg){
             drone_state=READY_TO_GO;
         }
         else
-        {            cout<<"sending gotoraw!!!!!!!!!!!!!!!!!!!! "<<std::endl;
+        {            cout<<"sending the final command."<<std::endl;
 
             publishCommand(n,tum_ardrone_pub,command_channel,"c clearCommands");
             publishCommand(n,tum_ardrone_pub,command_channel, finalCommand);
@@ -601,6 +525,90 @@ find_camera_pose_node(ros::NodeHandle nh) :
     command_channel = nh.resolveName("tum_ardrone/com");
     tum_ardrone_pub = nh.advertise<std_msgs::String>(command_channel,50);
     noCommandsPublisher= n.advertise<std_msgs::Empty>("/tum_ardrone/nocommands", 1);
+
+    initializeCommands += "setReference $POSE$",
+                        "setInitialReachDist 0.2",
+                        "setStayWithinDist 0.7",
+                                       "setStayTime 1",
+                                       "gotohov 0 0 0.25 0",
+                                        "gotohov 0 0 -0.25 0",
+                                        "gotohov 0 0 0.25 0"
+                                        "gotohov 0 0 0 0",
+                                        "gotohov 0 0 0 0";
+
+    simpleExploreCommands+= "setReference $POSE$",
+                           "setInitialReachDist 0.3",
+                           "setStayWithinDist 0.4",
+                           "setStayTime 0.4",
+
+                                      "goto 0 0 0 15",
+                                      "goto 0 0 -0.25 30",
+                                      "goto 0 0 0.25 40",
+                                      "goto 0 0 -0.25 30",
+                                      "goto 0 0 0.25 15",
+                                      "goto 0 0 -0.25 0",
+                                        "goto 0 0 0 -15",
+                                        "goto 0 0 -0.25 -30",
+                                        "goto 0 0 0.25 -40",
+                                        "goto 0 0 -0.25 -30",
+                                        "goto 0 0 0.25 -15",
+                                      "goto 0 0 0 0";
+
+    _360exploreCommands+= "setReference $POSE$",
+                          "setInitialReachDist 0.3",
+                          "setStayWithinDist 0.4",
+                          "setStayTime 0.1",
+
+                                       "goto 0.4 0 0 0       ",
+                                       "goto -0.4 0 0 0      ",
+                                       "goto 0 0 0.25 10     ",
+                                       "goto 0 0 -0.25 20    ",
+                                       "goto 0 0 0.25 30     ",
+                                       "goto 0 0 -0.25 40    ",
+                                       "goto 0 0 0.25 50     ",
+                                       "goto 0 0 -0.25 60    ",
+                                       "goto 0 0 0.25 70     ",
+                                       "goto 0 0 -0.25 80    ",
+                                       "goto 0 0 0.25 90     ",
+                                       "goto 0 0.4 0.25 90   ",
+                                       "goto 0 -0.4 0.25 90  ",
+                                       "goto 0 0 -0.25 100   ",
+                                       "goto 0 0 0.25 110    ",
+                                       "goto 0 0 -0.25 120   ",
+                                       "goto 0 0 0.25 130    ",
+                                       "goto 0 0 -0.25 140   ",
+                                       "goto 0 0 0.25 150    ",
+                                       "goto 0 0 -0.25 160   ",
+                                       "goto 0 0 0.25 170    ",
+                                       "goto 0 0 -0.25 180   ",
+                                       "goto 0.4 0 -0.25 180 ",
+                                       "goto -0.4 0 -0.25 180",
+                                       "goto 0 0 0.25 190    ",
+                                       "goto 0 0 -0.25 200   ",
+                                       "goto 0 0 0.25 210    ",
+                                       "goto 0 0 -0.25 220   ",
+                                       "goto 0 0 0.25 230    ",
+                                       "goto 0 0 -0.25 240   ",
+                                       "goto 0 0 0.25 250    ",
+                                       "goto 0 0 -0.25 260   ",
+                                       "goto 0 0 0.25 270    ",
+                                       "goto 0 0.4 0.25 270  ",
+                                       "goto 0 -0.4 0.25 270 ",
+                                       "goto 0 0 -0.25 280   ",
+                                       "goto 0 0 0.25 290    ",
+                                       "goto 0 0 -0.25 300   ",
+                                       "goto 0 0 0.25 310    ",
+                                       "goto 0 0 -0.25 320   ",
+                                       "goto 0 0 0.25 330    ",
+                                       "goto 0 0 -0.25 340   ",
+                                       "goto 0 0 0.25 350    ",
+                                       "goto 0 0 -0.25 360   ",
+                                       "goto 0 0 0 0         ",
+                                       "goto 0 0 -0.25 10    ",
+                                       "goto 0 0 0 20    ";
+
+
+
   }
 void run(){
 
@@ -611,6 +619,20 @@ void run(){
     cin >> RecTime;
     recordTime=ros::Duration(RecTime);    //record for 3 minutes
     ros::Rate r(10); // 10 hz
+    std::cout << "Please enter exploration mode: " << std::endl;
+
+    cin >> exploration_mode;
+    switch(exploration_mode){
+    case 0:
+        selectedCommands=simpleExploreCommands;
+        break;
+     case 1 :
+        selectedCommands=_360exploreCommands;
+        break;
+     default:
+        selectedCommands=simpleExploreCommands;
+        break;
+    }
 
     r.sleep();
     publishCommand(n,tum_ardrone_pub,n.resolveName("tum_ardrone/com"),"c clearCommands");
@@ -666,17 +688,17 @@ void run(){
 
 double solvePnPThreshold=5.0;
 if(pointNumber>150)
-    solvePnPThreshold=4.0;
-if(pointNumber>250)
     solvePnPThreshold=3.0;
-if(pointNumber>400)
+if(pointNumber>250)
     solvePnPThreshold=2.0;
+if(pointNumber>400)
+    solvePnPThreshold=1.0;
 
 
 
 //cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector);
     cout<<"solvepnp threshold is: "<<solvePnPThreshold<<endl;
-    cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector, false, 100, solvePnPThreshold, 100);
+    cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector, false, 100, 4.5, 100);
 
 
 
@@ -691,7 +713,7 @@ calculateCommand();
     char buf[200];
 //    snprintf(buf,200,"gotoraw %.3f %.3f %.3f %.3f", result[0]/3,result[1]/3,result[2]/3,testYaw);
     ostringstream oss;
-    oss << "c gotoraw " <<result[0]/3<<" "<<result[1]/3<<" "<<result[2]/3<<" "<<testYaw;
+    oss << "c gotoraw " <<result[0]<<" "<<result[1]<<" "<<result[2]<<" "<<testYaw;
     finalCommand=oss.str();
     cout <<finalCommand<<endl;
 
