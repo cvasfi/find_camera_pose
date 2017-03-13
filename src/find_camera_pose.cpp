@@ -1,5 +1,6 @@
 #include "ros/ros.h"
 #include "std_msgs/String.h"
+#include "std_msgs/Empty.h"
 #include "sensor_msgs/Image.h"
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/image_encodings.h>
@@ -18,8 +19,6 @@
 #include <boost/archive/text_iarchive.hpp>
 #include <rosbag/view.h>
 #include <ctime>
-#include "ControlNode.h"
-#include "DroneController.h"
 #include "TooN/se3.h"
 #include "HelperFunctions.h"
 #include "tum_ardrone/filter_state.h"
@@ -83,6 +82,8 @@ ros::Subscriber subKalmanFilter;
 cv_bridge::CvImagePtr cv_ptr;
 ofstream imageList;
 ros::Publisher noCommandsPublisher;
+int lastDroneState;
+bool canRecord;
 
 std::vector<std::string> initializeCommands;
 std::vector<std::string> simpleExploreCommands;
@@ -102,7 +103,7 @@ int RecTime;
 
 void imageCB(const sensor_msgs::Image::ConstPtr& msg)
 {
-    if(msg->header.stamp.toSec()>=recordBegin.toSec()){
+    if(msg->header.stamp.toSec()>=recordBegin.toSec()&& canRecord){
 
         ostringstream oss;
       try
@@ -130,6 +131,7 @@ void frameCB(const lsd_slam_viewer::keyframeMsgConstPtr& msg)
 //Hide
 void KalmanFilterCB(const tum_ardrone::filter_stateConstPtr& msg){
     KalmanFilterBag.write("Pose_KalmanFilter", ros::Time::now(), *msg);
+    lastDroneState=msg->droneState;
 }
 
 void calculate3DPoints(std::vector<cv::Point2f>& mCoordinates,std::vector<cv::Point2f>& qCoordinates, lsd_slam_viewer::keyframeMsgConstPtr& frame){
@@ -333,6 +335,24 @@ void noCommandCB(std_msgs::Empty msg){
     case INITIAL :
     {
         cout<<"drone state is1: "<<drone_state<<std::endl;
+//        ros::Duration d1(0.1);
+//        ros::Time r1=ros::Time::now();
+//        ros::Time r2=ros::Time::now();
+//        ros::Rate rate1(100);
+//        while(ros::ok() && (r2-r1)<d1){
+////          ros::spinOnce();
+//          rate1.sleep();
+//          r2 = ros::Time::now();
+//          if(lastDroneState == 2 || lastDroneState == 0)
+//{
+//                      publishCommand(n,tum_ardrone_pub,command_channel,"c clearCommands");
+//                      publishCommand(n,tum_ardrone_pub,command_channel,"c newtakeoff");
+//                      publishCommand(n,tum_ardrone_pub,command_channel,"c start");
+//        }
+//        d1.sleep();
+//        }
+
+
         publishCommand(n,tum_ardrone_pub,command_channel,"c clearCommands");
         publishCommand(n,tum_ardrone_pub,command_channel,"c newtakeoff");
         publishCommand(n,tum_ardrone_pub,command_channel,"c start");
@@ -343,7 +363,6 @@ void noCommandCB(std_msgs::Empty msg){
     }
     case INITIALIZE:
         {
-        cout<<"drone state is: "<<drone_state<<std::endl;
 //        pID = fork();
 //        if (pID == 0)                // child
 //        {
@@ -361,9 +380,11 @@ void noCommandCB(std_msgs::Empty msg){
 //         {
 //           // Code only executed by parent process
 //         }
-
-        ros::Duration r(3);    //record for 3 minutes
-        r.sleep();
+        cout<<"time1 "<<ros::Time::now()<<endl;
+//        ros::Duration r(3);    //record for 3 minutes
+//        r.sleep();
+        cout<<"time2 "<<ros::Time::now()<<endl;
+        cout<<"drone state is: "<<drone_state<<std::endl;
         publishCommand(n,tum_ardrone_pub,command_channel,"c clearCommands");
         for (int i = 0; i < initializeCommands.size(); ++i) {
             std::stringstream c;
@@ -371,15 +392,20 @@ void noCommandCB(std_msgs::Empty msg){
             publishCommand(n,tum_ardrone_pub,command_channel,c.str());
         }
         publishCommand(n,tum_ardrone_pub,command_channel,"c start");
+//        r.sleep();
+
         drone_prev_state=INITIALIZE;
         drone_state=EXPLORING;
     }
     case EXPLORING :
     {
-        ros::Duration r(4);
-        r.sleep();
+//        cout<<"time1 "<<ros::Time::now()<<endl;
+//        ros::Duration r(4);
+//        r.sleep();
+//        cout<<"time1 "<<ros::Time::now()<<endl;
         cout<<"drone state is: "<<drone_state<<std::endl;
-
+        canRecord=true;
+//        recordBegin=ros::Time::now();
         publishCommand(n,tum_ardrone_pub,command_channel,"c clearCommands");
         for (int i = 0; i < selectedCommands.size(); ++i) {
             std::stringstream c;
@@ -507,11 +533,13 @@ find_camera_pose_node(ros::NodeHandle nh) :
   {
     system("exec rm -r src/find_camera_pose/images/*");
     system("exec rm -r src/find_camera_pose/results/*");
+    canRecord==false;
     drone_state=INITIAL;
     drone_prev_state=INITIAL;
     testRoll = 0;
     testPitch = 0;
     testYaw = 0;
+    lastDroneState=0;
     imageList.open("src/find_camera_pose/images/trainImageList.txt", ios_base::app);
     frameBag.open("src/find_camera_pose/frames/frames.bag", rosbag::bagmode::Write);
     KalmanFilterBag.open("src/find_camera_pose/KalmanFilter/KalmanFilter.bag", rosbag::bagmode::Write);
@@ -527,13 +555,13 @@ find_camera_pose_node(ros::NodeHandle nh) :
     noCommandsPublisher= n.advertise<std_msgs::Empty>("/tum_ardrone/nocommands", 1);
 
     initializeCommands += "setReference $POSE$",
-                        "setInitialReachDist 0.2",
-                        "setStayWithinDist 0.7",
+                        "setInitialReachDist 0.3",
+                        "setStayWithinDist 0.4",
                                        "setStayTime 1",
-                                       "gotohov 0 0 0.25 0",
+
+                                       "gotohov 0 0 0.50 0",
                                         "gotohov 0 0 -0.25 0",
-                                        "gotohov 0 0 0.25 0"
-                                        "gotohov 0 0 0 0",
+                                        "gotohov 0 0 0.50 0"
                                         "gotohov 0 0 0 0";
 
     simpleExploreCommands+= "setReference $POSE$",
@@ -553,6 +581,24 @@ find_camera_pose_node(ros::NodeHandle nh) :
                                         "goto 0 0 -0.25 -30",
                                         "goto 0 0 0.25 -15",
                                       "goto 0 0 0 0";
+
+//    simpleExploreCommands+= "setReference $POSE$",
+//                           "setInitialReachDist 0.3",
+//                           "setStayWithinDist 0.4",
+//                           "setStayTime 0.4",
+
+//                                      "goto 0 0 0  20",
+//                                      "goto 0 0 -0.15 30",
+//                                      "goto 0 0 0.50 40",
+//                                      "goto 0 0 -0.25 30",
+//                                      "goto 0 0 0.25 15",
+//                                      "goto 0 0 -0.25 0",
+//                                        "goto 0 0 0 -15",
+//                                        "goto 0 0 -0.25 -30",
+//                                        "goto 0 0 0.25 -40",
+//                                        "goto 0 0 -0.25 -30",
+//                                        "goto 0 0 0.25 -15",
+//                                      "goto 0 0 0 0";
 
     _360exploreCommands+= "setReference $POSE$",
                           "setInitialReachDist 0.3",
@@ -635,9 +681,9 @@ void run(){
     }
 
     r.sleep();
-    publishCommand(n,tum_ardrone_pub,n.resolveName("tum_ardrone/com"),"c clearCommands");
-    publishCommand(n,tum_ardrone_pub,n.resolveName("tum_ardrone/com"),"c discover1");
-    publishCommand(n,tum_ardrone_pub,n.resolveName("tum_ardrone/com"),"c start");
+//    publishCommand(n,tum_ardrone_pub,n.resolveName("tum_ardrone/com"),"c clearCommands");
+//    publishCommand(n,tum_ardrone_pub,n.resolveName("tum_ardrone/com"),"c discover1");
+//    publishCommand(n,tum_ardrone_pub,n.resolveName("tum_ardrone/com"),"c start");
     ros::spinOnce();
     recordBegin = ros::Time::now();
     ros::Time recordEnd = ros::Time::now();
@@ -654,6 +700,7 @@ void run(){
       r.sleep();
       recordEnd = ros::Time::now();
     }
+    cout<<"record ended... "<<endl;
     subImages.shutdown();
     subFrames.shutdown();
     subKalmanFilter.shutdown();
@@ -686,19 +733,19 @@ void run(){
     cv::Mat K = (cv::Mat_<float>(3, 3) << matchedFrame->fx, 0, matchedFrame->cx, 0, matchedFrame->fy, matchedFrame->cy, 0, 0, 1);
     cv::Mat distortion = (cv::Mat_<float>(4, 1) << 0, 0, 0, 0);
 
-double solvePnPThreshold=5.0;
+double solvePnPThreshold=6.0;
 if(pointNumber>150)
-    solvePnPThreshold=3.0;
+    solvePnPThreshold=5.0;
 if(pointNumber>250)
-    solvePnPThreshold=2.0;
+    solvePnPThreshold=4.0;
 if(pointNumber>400)
-    solvePnPThreshold=1.0;
+    solvePnPThreshold=3.0;
 
 
 
 //cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector);
     cout<<"solvepnp threshold is: "<<solvePnPThreshold<<endl;
-    cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector, false, 100, 4.5, 100);
+    cv::solvePnPRansac(match3dPoints,selected2dPoints,K,distortion,rotation_vector,translation_vector, false, 100, 8.0, 100);
 
 
 
