@@ -11,3 +11,6 @@
 10. Run ```rosrun find_camera_pose find_camera_pose```
 11. Explore the environment for a period of time you set.
 12. After exploration drone lands, calculates goal location and navigate there automatically.
+
+Youtube Movie:
+https://www.youtube.com/watch?v=BLY3kgeZrZg
