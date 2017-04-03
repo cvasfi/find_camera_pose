@@ -8,8 +8,6 @@
 6. Run ```roslaunch bebop_converter start.launch```
 7. Run ```roslaunch bebop_converter tum_ardrone.launch```
 8. Run ```rosrun lsd_slam_viewer viewer```
-9. Fly quadcopter up and down to initialize kalman filter.
 10. Run ```rosrun find_camera_pose find_camera_pose```
 11. Explore the environment for a period of time you set.
-12. ```find_camera_pose``` calculates target position as ```gotoraw x, y, z, yaw```
-13. On gui, check ```Autopilot``` and copy and past ```gotoraw x, y, z, yaw```, then click ```Clear and Send```
+12. After exploration drone lands, calculates goal location and navigate there automatically.
