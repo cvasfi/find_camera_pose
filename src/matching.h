@@ -39,17 +39,14 @@ struct trainImgIdx_equal {
 
 static void maskMatchesByTrainImgIdx( const vector<DMatch>& matches, int trainImgIdx, vector<char>& mask )
 {
-    int ii=1;
     mask.resize( matches.size() );
     fill( mask.begin(), mask.end(), 0 );
     for( size_t i = 0; i < matches.size(); i++ )
     {
         if( matches[i].imgIdx == trainImgIdx ){
             mask[i] = 1;
-            ii++;
         }
     }
-  //  cout<<" is: "<<ii<<endl;
 }
 
 
@@ -84,7 +81,6 @@ static bool createDetectorDescriptorMatcher( const string& detectorType, const s
                                       Ptr<DescriptorExtractor>& descriptorExtractor,
                                       Ptr<DescriptorMatcher>& descriptorMatcher )
 {
-    cout << "< Creating feature detector, descriptor extractor and descriptor matcher ..." << endl;
     featureDetector = FeatureDetector::create( detectorType );
     descriptorExtractor = DescriptorExtractor::create( descriptorType );
     descriptorMatcher = DescriptorMatcher::create( matcherType );
@@ -144,7 +140,6 @@ static void detectKeypoints( const Mat& queryImage, vector<KeyPoint>& queryKeypo
     cout << endl << "< Extracting keypoints from images..." << endl;
     featureDetector->detect( queryImage, queryKeypoints );
     featureDetector->detect( trainImages, trainKeypoints );
-    cout << ">" << endl;
 }
 
 static void computeDescriptors( const Mat& queryImage, vector<KeyPoint>& queryKeypoints, Mat& queryDescriptors,
@@ -200,13 +195,12 @@ static void saveResultImages( const Mat& queryImage, const vector<KeyPoint>& que
                        const vector<Mat>& trainImages, const vector<vector<KeyPoint> >& trainKeypoints,
                        const vector<DMatch>& matches, const vector<string>& trainImagesNames, const string& resultDir )
 {
-   // std::map<int, int> bestMatch;
     int maxMatchNum=0;
     int currentMatchNum;
     int bestMatchIndex=-1;
 
 
-    cout << "< Save results..." << endl;
+    cout << "< Saving results..." << endl;
     Mat drawImg;
     vector<char> mask;
     for( size_t i = 0; i < trainImages.size(); i++ )
@@ -233,7 +227,6 @@ static void saveResultImages( const Mat& queryImage, const vector<KeyPoint>& que
     istringstream iss(trainImagesNames[bestMatchIndex]);
     int a;
     iss>>matchID;
-    cout<<"found index is: "<<a;
     vector<DMatch> correspondingMatches;
 
 
@@ -244,11 +237,6 @@ static void saveResultImages( const Mat& queryImage, const vector<KeyPoint>& que
             tCoordinates.push_back(trainKeypoints[bestMatchIndex][matches[i].trainIdx].pt);
         }
     }
-
-
-
-    cout<<"size of cmatches is: "<<correspondingMatches.size()<<endl;
-    cout << ">" << endl;
 }
 
 std::vector<cv::Point2f> getQueryCoordinates(){return qCoordinates;}
